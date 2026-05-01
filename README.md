@@ -102,7 +102,3 @@ If something's broken, hit me up:
 - **Email:** Dwils178@gmail.com
 
 Bug reports are most useful with a screenshot or the relevant lines from the in-app log panel.
-
-## License
-
-(Add a license here if you want one — MIT is a common choice.)
