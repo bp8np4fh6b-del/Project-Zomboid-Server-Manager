@@ -1,0 +1,38 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+release/
+*.tsbuildinfo
+
+# Editor / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+*.swp
+*~
+
+# Local environment / secrets
+.env
+.env.*
+*.pem
+*.key
+
+# Claude Code local state — DO NOT push, contains personal permissions and
+# (historically) leaked tokens.
+.claude/
+
+# Plans / scratch
+plans/
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Misc
+.cache/
+coverage/

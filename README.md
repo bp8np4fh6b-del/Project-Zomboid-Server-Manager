@@ -27,11 +27,11 @@ A desktop app for running and managing Project Zomboid Build 42 dedicated server
 - Installer page restructured with clear "Current Install" → "Step 1 SteamCMD" → "Step 2 PZ Server" → "Move existing server" sections. You can now change the install drive before installing or point the manager at an existing server you've moved manually.
 - In-app patch notes — click the version button at the bottom of the sidebar to read the changelog. Auto-opens once after each update.
 
-Full changelog: see the in-app patch notes button or [Releases](../../releases).
+Full changelog: see the in-app patch notes button or the [Releases page](../../releases).
 
 ## Installation
 
-1. Download the latest installer from the [Releases page](../../releases/latest):  
+1. Download the latest installer from the [Releases page](../../releases/latest):
    `PZ-Server-Manager-Setup-X.Y.Z.exe`
 2. Double-click to run. Windows SmartScreen will warn that the app is from an unrecognised publisher (the build is unsigned) — click **More info → Run anyway**. This is one-time.
 3. Click through the wizard. The installer is per-user (no admin prompt) and creates a Start Menu / Desktop shortcut.
@@ -77,7 +77,7 @@ Built with Electron + React + Vite + TypeScript + Tailwind. Auto-updates via `el
 
 <img width="1722" height="1127" alt="Monitoring" src="https://github.com/user-attachments/assets/48898635-c1f2-453f-a22d-99752a9868c0" />
 
-<img width="1716" height="1130" alt="Wipe" src="https://github.com/user-attachments/assets/2f34aee9-760e-403e-bf8b-b4dadebcc1f0" />
+<img width="1716" height="1130" alt="Wipe" src="https://github.com/user-attachments/assets/48898635-c1f2-453f-a22d-99752a9868c0" />
 
 </details>
 
@@ -102,3 +102,7 @@ If something's broken, hit me up:
 - **Email:** Dwils178@gmail.com
 
 Bug reports are most useful with a screenshot or the relevant lines from the in-app log panel.
+
+## License
+
+[MIT](LICENSE) — do whatever you want, just keep the copyright notice.

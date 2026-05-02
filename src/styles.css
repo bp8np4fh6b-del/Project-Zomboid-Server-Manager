@@ -1,0 +1,50 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --bg-base: #0f0f0f;
+    --bg-elevated: #1a1a1a;
+    --bg-surface: #222222;
+    --bg-hover: #2a2a2a;
+    --bg-active: #1f1f1f;
+    --border-subtle: #333333;
+    --border-active: #444444;
+    --text-primary: #e0e0e0;
+    --text-secondary: #a0a0a0;
+    --text-tertiary: #666666;
+    --accent-red: #e74c3c;
+    --accent-amber: #f39c12;
+    --accent-green: #2ecc71;
+    --accent-blue: #3498db;
+  }
+
+  body {
+    background-color: var(--bg-base);
+    color: var(--text-primary);
+    font-family: 'Segoe UI', system-ui, sans-serif;
+    overflow: hidden;
+  }
+}
+
+@layer components {
+  .btn-primary {
+    @apply px-4 py-2 bg-accent-green/20 text-accent-green rounded-md font-medium hover:bg-accent-green/30 transition-all;
+  }
+  .btn-danger {
+    @apply px-4 py-2 bg-accent-red/20 text-accent-red rounded-md font-medium hover:bg-accent-red/30 transition-all;
+  }
+  .btn-secondary {
+    @apply px-4 py-2 bg-bg-surface text-text-secondary rounded-md font-medium hover:bg-bg-hover transition-all border border-border-subtle;
+  }
+  .card {
+    @apply bg-bg-elevated rounded-lg border border-border-subtle p-4;
+  }
+  .input {
+    @apply bg-bg-surface border border-border-subtle rounded-md px-3 py-2 text-text-primary focus:outline-none focus:border-accent-blue;
+  }
+  .textarea {
+    @apply bg-bg-surface border border-border-subtle rounded-md px-3 py-2 text-text-primary focus:outline-none focus:border-accent-blue font-mono text-sm;
+  }
+}
