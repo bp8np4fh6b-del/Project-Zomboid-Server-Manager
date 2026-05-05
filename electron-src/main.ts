@@ -1,9 +1,13 @@
-const { app, BrowserWindow, ipcMain, shell, dialog } = require('electron')
+const { app, BrowserWindow, Menu, ipcMain, shell, dialog } = require('electron')
 const { join } = require('path')
 const { autoUpdater } = require('electron-updater')
 const backend = require('./backend')
 
 const isDev = process.argv.includes('--dev')
+
+// Hide the legacy File / Edit / View / Window / Help menu globally — none of
+// those entries do anything for this app. The renderer ships its own UI chrome.
+Menu.setApplicationMenu(null)
 
 let mainWindow: any = null
 
@@ -14,6 +18,7 @@ function createWindow() {
     minWidth: 900,
     minHeight: 600,
     title: 'PZ Server Manager',
+    autoHideMenuBar: true,
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
@@ -182,6 +187,7 @@ ipcMain.handle('paths:set', async (_e: any, partial: any) => {
   return r
 })
 ipcMain.handle('paths:detectExistingServer', async (_e: any, folder: string) => backend.detectExistingServer(folder))
+ipcMain.handle('install:scanForExisting', async () => backend.scanForExistingPzServer())
 
 // App info
 ipcMain.handle('app:getVersion', async () => app.getVersion())
@@ -195,6 +201,12 @@ ipcMain.handle('console:status', async () => backend.consoleStatus())
 ipcMain.handle('console:players', async () => backend.consoleGetPlayers())
 ipcMain.handle('console:broadcast', async (_e: any, message: string) => backend.consoleBroadcast(message))
 ipcMain.handle('console:send', async (_e: any, cmd: string) => backend.consoleSendCommand(cmd))
+
+// RCON admin actions (kick/ban/command/status)
+ipcMain.handle('admin:rconStatus', async () => backend.adminRconStatus())
+ipcMain.handle('admin:kick', async (_e: any, name: string, reason?: string) => backend.adminKick(name, reason))
+ipcMain.handle('admin:ban', async (_e: any, name: string, reason?: string) => backend.adminBan(name, reason))
+ipcMain.handle('admin:command', async (_e: any, cmd: string) => backend.adminCommand(cmd))
 
 // In-game chat feed
 ipcMain.handle('chat:get', async () => backend.getChatLog())

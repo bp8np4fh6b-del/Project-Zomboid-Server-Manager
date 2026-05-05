@@ -155,6 +155,7 @@ declare global {
       getManagerPaths: () => Promise<{ success: boolean; paths: { basePath: string; serverPath: string; zomboidPath: string }; defaults: { basePath: string; serverPath: string; zomboidPath: string }; configFile: string }>
       setManagerPaths: (partial: { basePath?: string; serverPath?: string; zomboidPath?: string }) => Promise<{ success: boolean; error?: string; paths?: { basePath: string; serverPath: string; zomboidPath: string } }>
       detectExistingServer: (folder: string) => Promise<{ success: boolean; folder?: string; launchers?: string[]; error?: string }>
+      scanForExistingPzServer: () => Promise<{ success: boolean; candidates: Array<{ path: string; source: string; launchers: string[] }> }>
       getAppVersion: () => Promise<string>
       getServerMetrics: () => Promise<{ success: boolean; running: boolean; cpuPercent: number; memoryBytes: number; uptime: number; onlineCount: number; history: Array<{ t: number; cpuPercent: number; memoryBytes: number; onlineCount: number }>; error?: string }>
       getOnlineCount: () => Promise<{ success: boolean; count: number }>
@@ -164,6 +165,10 @@ declare global {
       consolePlayers: () => Promise<{ success: boolean; players: Array<{ name: string }>; updatedAt?: number; error?: string }>
       consoleBroadcast: (message: string) => Promise<{ success: boolean; error?: string }>
       consoleSend: (cmd: string) => Promise<{ success: boolean; error?: string }>
+      adminRconStatus: () => Promise<{ success: boolean; connected: boolean; port: number; hasPassword: boolean; serverOnline: boolean; error?: string | null }>
+      adminKick: (name: string, reason?: string) => Promise<{ success: boolean; response?: string; error?: string }>
+      adminBan: (name: string, reason?: string) => Promise<{ success: boolean; response?: string; error?: string }>
+      adminCommand: (cmd: string) => Promise<{ success: boolean; response?: string; error?: string }>
       getChatLog: () => Promise<{ success: boolean; messages: Array<{ at: string; username: string; text: string }> }>
       clearChatLog: () => Promise<{ success: boolean }>
       listSchedules: () => Promise<{ success: boolean; schedules: Array<{ id: string; time: string; enabled: boolean; warningMinutes?: number[]; nextFireAt: number | null }> }>

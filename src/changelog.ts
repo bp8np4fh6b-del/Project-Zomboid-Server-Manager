@@ -20,6 +20,36 @@ const REPO_RELEASES = 'https://github.com/bp8np4fh6b-del/Project-Zomboid-Server-
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: '0.2.3',
+    date: '2026-05-05',
+    url: `${REPO_RELEASES}/tag/v0.2.3`,
+    sections: {
+      notes: [
+        'Version line reset from 1.x back to 0.x — the manager is treated as pre-release until further notice. Historical releases (1.0.1 through 1.2.3) on GitHub stay as-is; new builds carry on under 0.x.',
+        'Kick / Ban use PZ\'s built-in `kickuser` / `banuser` server commands. Bans persist via the server\'s `db/ban.json` — unbanning still requires the server console for now.',
+        'Section ordering in this changelog modal is now Notes → Added → Quality of Life → Fixed.',
+      ],
+      added: [
+        'Kick and Ban controls on every online player, available from both the Players tab and the Dashboard\'s Live Console. Each action has an optional reason field and a confirm step (with an extra warning on Ban), and a transient success / error toast surfaces the outcome.',
+        'New Installer flow: a single "Set up server" button orchestrates SteamCMD download then PZ Dedicated Server download as one continuous wizard with combined two-phase progress, replacing the old click-each-button card stack.',
+        'Installer auto-scans your Steam libraries (via `libraryfolders.vdf`) on first open. If an existing PZ Dedicated Server install is detected on any drive, a banner offers "Use this" so you adopt it in one click instead of re-downloading 2–3 GB.',
+        '"I already have one" path in the wizard lets you point at any existing dedicated server folder, with `detectExistingServer` validating the launcher before adopting it.',
+        'Once the server is fully installed, the Installer tab collapses into a compact summary card showing the current paths plus Reinstall / Repair and Move-to-a-different-drive shortcuts, with a Go-to-Dashboard CTA after a fresh install.',
+        'Admin status chip on the Players tab and Dashboard Live Console — at a glance you can see whether kick / ban actions are currently available.',
+      ],
+      qol: [
+        'Changelog modal: "Older / Newer" buttons renamed to Back / Next; the footer "View on GitHub" button is now a Close button, and the GitHub link is an inline clickable text link at the end of each entry\'s body.',
+        'Removed the legacy File / Edit / View / Window / Help menu bar — none of those entries did anything for this app, and the renderer ships its own UI chrome.',
+        'Modern themed scrollbars throughout the manager — thin, dark, transparent track, and consistent with the rest of the UI instead of the chunky default Windows scrollbar.',
+        'Steam-library auto-scan presents found installs with their source ("Steam library: D:\\SteamLibrary", etc.) so you can tell which one you\'re adopting before you click.',
+      ],
+      fixed: [
+        'Server failed to start when the launcher path contained spaces (the default Steam path "Project Zomboid Dedicated Server" does). The cmd.exe quoting now uses `cmd /d /s /c "<full quoted command>"` with `windowsVerbatimArguments`, so paths with spaces survive end-to-end.',
+        'Kick / Ban now ride on the same in-house stdin console the rest of the manager uses — Build 42\'s RCON path was returning `RCONERROR` even with a valid password set. Stdin is fire-and-forget, so success means "command sent"; the player-list poll confirms the effect within a few seconds and the Activity feed gets an audit entry.',
+      ],
+    },
+  },
+  {
     version: '1.2.3',
     date: '2026-04-30',
     url: `${REPO_RELEASES}/tag/v1.2.3`,

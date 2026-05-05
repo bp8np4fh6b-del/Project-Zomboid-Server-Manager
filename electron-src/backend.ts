@@ -2,7 +2,6 @@ const { spawn, exec } = require('child_process')
 const fs = require('fs')
 const path = require('path')
 const https = require('https')
-const net = require('net')
 const nodeCrypto = require('crypto')
 const { promisify } = require('util')
 const execAsync = promisify(exec)
@@ -215,6 +214,66 @@ function detectExistingServer(folder: string) {
   } catch (err: any) {
     return { success: false, error: err.message }
   }
+}
+
+// Walk the user's Steam libraries to find an existing "Project Zomboid
+// Dedicated Server" install. Lets the Installer offer "Use this install"
+// in one click instead of redownloading a 2-3 GB game.
+function scanForExistingPzServer() {
+  const PZ_FOLDER = 'Project Zomboid Dedicated Server'
+  const seen = new Set<string>()
+  const candidates: Array<{ path: string; source: string; launchers: string[] }> = []
+
+  // Common Steam install roots — we'll read libraryfolders.vdf from each to
+  // discover additional libraries on other drives.
+  const steamRoots = [
+    path.join(process.env['ProgramFiles(x86)'] || 'C:\\Program Files (x86)', 'Steam'),
+    path.join(process.env['ProgramFiles'] || 'C:\\Program Files', 'Steam'),
+  ]
+
+  // Library roots to actually probe for the PZ folder.
+  const libraryRoots: string[] = []
+  for (const root of steamRoots) {
+    libraryRoots.push(root)
+    try {
+      const vdf = path.join(root, 'steamapps', 'libraryfolders.vdf')
+      if (!fileExists(vdf)) continue
+      const text = fs.readFileSync(vdf, 'utf-8')
+      // Match every `"path" "<value>"` line. Backslashes in the VDF are doubled.
+      const pathRegex = /"path"\s+"([^"]+)"/g
+      let m: RegExpExecArray | null
+      while ((m = pathRegex.exec(text)) !== null) {
+        const lib = m[1].replace(/\\\\/g, '\\')
+        if (lib && !libraryRoots.includes(lib)) libraryRoots.push(lib)
+      }
+    } catch { /* ignore unreadable VDF */ }
+  }
+
+  // Also include the manager's currently-configured serverPath in case the
+  // user already pointed at an external install.
+  try {
+    const cfg = loadPathsConfig()
+    if (cfg.serverPath) libraryRoots.push(cfg.serverPath)
+  } catch { /* ignore */ }
+
+  for (const root of libraryRoots) {
+    // Two shapes: `<lib>\steamapps\common\<PZ_FOLDER>` (Steam library) or
+    // `<root>` itself being the PZ folder (manager-configured serverPath).
+    const probes = [
+      { dir: path.join(root, 'steamapps', 'common', PZ_FOLDER), source: `Steam library: ${root}` },
+      { dir: root, source: 'Manager-configured server folder' },
+    ]
+    for (const probe of probes) {
+      if (!probe.dir || seen.has(probe.dir.toLowerCase())) continue
+      const det = detectExistingServer(probe.dir)
+      if (det.success) {
+        seen.add(probe.dir.toLowerCase())
+        candidates.push({ path: probe.dir, source: probe.source, launchers: det.launchers || [] })
+      }
+    }
+  }
+
+  return { success: true, candidates }
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -478,6 +537,86 @@ function consoleSendCommand(cmd: string) {
     return { success: false, error: lastConsoleError || 'Could not send command.' }
   }
   return { success: true }
+}
+
+// ═══════════════════════════════════════════════════════════════
+// ADMIN ACTIONS — kick / ban via the in-house stdin console.
+//
+// Build 42's RCON path is unreliable in practice (it returned "RCONERROR"
+// on the user's setup even with a valid password). Stdin is the channel
+// the rest of the manager already uses for `players`, `servermsg`,
+// `save`, and `quit` — `kickuser` and `banuser` are accepted on the same
+// channel, so we route admin actions through it too. Trade-off: stdin
+// is fire-and-forget, so success here means "we wrote the command";
+// the player list poll and Activity feed confirm the effect.
+// ═══════════════════════════════════════════════════════════════
+
+function adminEscape(s: string): string {
+  // Strip embedded double-quotes; PZ doesn't accept escaped quotes inside
+  // the quoted username argument. Names with quotes are extremely rare.
+  return s.replace(/"/g, '')
+}
+
+function adminSendCommand(cmd: string): { success: boolean; error?: string } {
+  if (serverStatus !== 'online') return { success: false, error: 'Server is not running.' }
+  if (!sendServerCommand(cmd)) {
+    return { success: false, error: lastConsoleError || 'Could not send command to the server console.' }
+  }
+  return { success: true }
+}
+
+async function adminKick(name: string, reason?: string) {
+  const safeName = adminEscape(name)
+  const safeReason = reason ? adminEscape(reason) : ''
+  const cmd = safeReason
+    ? `kickuser "${safeName}" -r "${safeReason}"`
+    : `kickuser "${safeName}"`
+  const r = adminSendCommand(cmd)
+  if (r.success) {
+    pushActivity({
+      at: new Date().toISOString(),
+      kind: 'admin',
+      message: safeReason ? `Kicked ${safeName} — ${safeReason}` : `Kicked ${safeName}`,
+    })
+  }
+  return r
+}
+
+async function adminBan(name: string, reason?: string) {
+  const safeName = adminEscape(name)
+  const safeReason = reason ? adminEscape(reason) : ''
+  const cmd = safeReason
+    ? `banuser "${safeName}" -r "${safeReason}"`
+    : `banuser "${safeName}"`
+  const r = adminSendCommand(cmd)
+  if (r.success) {
+    pushActivity({
+      at: new Date().toISOString(),
+      kind: 'admin',
+      message: safeReason ? `Banned ${safeName} — ${safeReason}` : `Banned ${safeName}`,
+    })
+  }
+  return r
+}
+
+async function adminCommand(cmd: string) {
+  return adminSendCommand(cmd)
+}
+
+function adminRconStatus() {
+  // Name retained for backwards compatibility with the existing IPC. The
+  // "RCON" naming is now historical — admin actions ride on the stdin
+  // console that broadcast / players-poll already use, so availability
+  // simply mirrors `serverStatus === 'online'`.
+  const ready = serverStatus === 'online'
+  return {
+    success: true,
+    connected: ready,
+    port: 0,
+    hasPassword: ready, // legacy field; kept true so the UI gates only on serverOnline
+    serverOnline: ready,
+    error: ready ? null : (lastConsoleError || null),
+  }
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -1054,23 +1193,38 @@ async function startServer(opts: any = {}) {
 
   try {
     const isBat = launcher.toLowerCase().endsWith('.bat')
-    serverProcess = isBat
-      // .bat must be invoked through cmd /c on Windows. We need stdin to be
+    if (isBat) {
+      // .bat must be invoked through cmd.exe on Windows. We need stdin to be
       // a real pipe (not "ignore") so we can answer Build 41's interactive
       // password prompts, and so that the Java Scanner doesn't immediately
       // throw NoSuchElementException on an EOF stdin.
-      ? spawn('cmd.exe', ['/c', launcher, ...args], {
-          cwd: serverPath,
-          windowsHide: true,
-          env: { ...process.env },
-          stdio: ['pipe', 'pipe', 'pipe'],
-        })
-      : spawn(launcher, args, {
-          cwd: serverPath,
-          windowsHide: true,
-          env: { ...process.env },
-          stdio: ['pipe', 'pipe', 'pipe'],
-        })
+      //
+      // Quoting: Steam's default install path ("Project Zomboid Dedicated
+      // Server") contains spaces. Node's auto-escaping for `spawn(cmd.exe,
+      // [/c, launcher, ...args])` interacts badly with cmd's /c quote
+      // rules and the path ends up split at the first space:
+      //   'C:\…\common\Project' is not recognized as an internal or external command
+      // Fix: use `cmd /d /s /c "<full quoted command>"` with
+      // windowsVerbatimArguments so we control quoting end-to-end. The /s
+      // flag tells cmd to treat the outer quotes as a wrapper and execute
+      // exactly what's inside, preserving inner quoting.
+      const quote = (s: string) => /[\s"]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s
+      const inner = [quote(launcher), ...args.map(quote)].join(' ')
+      serverProcess = spawn('cmd.exe', ['/d', '/s', '/c', `"${inner}"`], {
+        cwd: serverPath,
+        windowsHide: true,
+        windowsVerbatimArguments: true,
+        env: { ...process.env },
+        stdio: ['pipe', 'pipe', 'pipe'],
+      })
+    } else {
+      serverProcess = spawn(launcher, args, {
+        cwd: serverPath,
+        windowsHide: true,
+        env: { ...process.env },
+        stdio: ['pipe', 'pipe', 'pipe'],
+      })
+    }
 
     // Track which password prompts we've already answered so we don't double-fire
     // on the same prompt, but also so a second distinct prompt (e.g. "Confirm the
@@ -2889,6 +3043,7 @@ module.exports = {
   getPaths,
   setPaths,
   detectExistingServer,
+  scanForExistingPzServer,
 
   // Install
   installSteamCmd,
@@ -2903,6 +3058,12 @@ module.exports = {
   consoleGetPlayers,
   consoleBroadcast,
   consoleSendCommand,
+
+  // RCON admin actions (kick/ban/command/status)
+  adminKick,
+  adminBan,
+  adminCommand,
+  adminRconStatus,
 
   // Chat feed (parsed from log)
   getChatLog,

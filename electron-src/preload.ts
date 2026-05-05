@@ -75,6 +75,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   getManagerPaths: () => ipcRenderer.invoke('paths:get'),
   setManagerPaths: (partial: any) => ipcRenderer.invoke('paths:set', partial),
   detectExistingServer: (folder: string) => ipcRenderer.invoke('paths:detectExistingServer', folder),
+  scanForExistingPzServer: () => ipcRenderer.invoke('install:scanForExisting'),
 
   // App version
   getAppVersion: () => ipcRenderer.invoke('app:getVersion'),
@@ -92,6 +93,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
   consolePlayers: () => ipcRenderer.invoke('console:players'),
   consoleBroadcast: (message: string) => ipcRenderer.invoke('console:broadcast', message),
   consoleSend: (cmd: string) => ipcRenderer.invoke('console:send', cmd),
+
+  // RCON admin actions
+  adminRconStatus: () => ipcRenderer.invoke('admin:rconStatus'),
+  adminKick: (name: string, reason?: string) => ipcRenderer.invoke('admin:kick', name, reason),
+  adminBan: (name: string, reason?: string) => ipcRenderer.invoke('admin:ban', name, reason),
+  adminCommand: (cmd: string) => ipcRenderer.invoke('admin:command', cmd),
 
   // In-game chat feed
   getChatLog: () => ipcRenderer.invoke('chat:get'),

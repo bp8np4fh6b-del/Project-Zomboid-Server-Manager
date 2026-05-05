@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { Users, Clock, RefreshCw, Trash2, ChevronDown, ChevronRight, Search, AlertCircle } from 'lucide-react'
+import { Users, Clock, RefreshCw, Trash2, ChevronDown, ChevronRight, Search, AlertCircle, UserX, Ban, ShieldAlert } from 'lucide-react'
 import type { PlayerRecord } from '../types'
 
 function formatDuration(ms: number) {
@@ -36,6 +36,12 @@ export default function Players() {
   const [showDiagnostics, setShowDiagnostics] = useState(false)
   const [liveNames, setLiveNames] = useState<string[]>([])
   const [consoleAvailable, setConsoleAvailable] = useState(false)
+  const [rcon, setRcon] = useState<{ connected: boolean; hasPassword: boolean; serverOnline: boolean }>({ connected: false, hasPassword: false, serverOnline: false })
+  // Per-player open action: which row has kick/ban inline form expanded
+  const [adminAction, setAdminAction] = useState<{ name: string; kind: 'kick' | 'ban' } | null>(null)
+  const [adminReason, setAdminReason] = useState('')
+  const [adminBusy, setAdminBusy] = useState(false)
+  const [adminToast, setAdminToast] = useState<{ kind: 'success' | 'error'; text: string } | null>(null)
 
   useEffect(() => {
     let alive = true
@@ -58,6 +64,7 @@ export default function Players() {
     if (serverStatus !== 'online') {
       setLiveNames([])
       setConsoleAvailable(false)
+      setRcon({ connected: false, hasPassword: false, serverOnline: false })
       return
     }
     let cancelled = false
@@ -71,12 +78,52 @@ export default function Players() {
           if (cancelled) return
           if (p?.success) setLiveNames(p.players.map((x) => x.name))
         }
+        const r = await window.electronAPI.adminRconStatus()
+        if (!cancelled && r?.success) {
+          setRcon({ connected: r.connected, hasPassword: r.hasPassword, serverOnline: r.serverOnline })
+        }
       } catch { /* ignore */ }
     }
     tick()
     const int = setInterval(tick, 5000)
     return () => { cancelled = true; clearInterval(int) }
   }, [serverStatus])
+
+  // Auto-dismiss admin toast after 3s
+  useEffect(() => {
+    if (!adminToast) return
+    const t = setTimeout(() => setAdminToast(null), 3000)
+    return () => clearTimeout(t)
+  }, [adminToast])
+
+  const adminAvailable = rcon.serverOnline
+  const adminTooltip = !rcon.serverOnline ? 'Server is not online' : ''
+
+  async function handleAdminConfirm() {
+    if (!adminAction) return
+    setAdminBusy(true)
+    try {
+      const reason = adminReason.trim() || undefined
+      const fn = adminAction.kind === 'kick' ? window.electronAPI.adminKick : window.electronAPI.adminBan
+      const verb = adminAction.kind === 'kick' ? 'Kicked' : 'Banned'
+      const r = await fn(adminAction.name, reason)
+      if (r?.success) {
+        setAdminToast({ kind: 'success', text: `${verb} ${adminAction.name}` })
+        setAdminAction(null)
+        setAdminReason('')
+        refresh()
+      } else {
+        setAdminToast({ kind: 'error', text: r?.error || `Failed to ${adminAction.kind} ${adminAction.name}` })
+      }
+    } finally {
+      setAdminBusy(false)
+    }
+  }
+
+  function openAction(name: string, kind: 'kick' | 'ban') {
+    setAdminAction({ name, kind })
+    setAdminReason('')
+  }
 
   async function refresh() {
     try {
@@ -185,6 +232,29 @@ export default function Players() {
         </div>
       </div>
 
+      {/* Admin status chip + transient action toast */}
+      {serverStatus === 'online' && (
+        <div className="flex items-center gap-2">
+          <span className={`text-[11px] px-2 py-0.5 rounded font-mono inline-flex items-center gap-1.5 border ${
+            adminAvailable
+              ? 'border-green-500/40 bg-green-500/10 text-green-300'
+              : 'border-[#444] bg-[#1f1f1f] text-[#a0a0a0]'
+          }`}>
+            <ShieldAlert size={11} />
+            Admin {adminAvailable ? 'ready' : 'unavailable'}
+          </span>
+        </div>
+      )}
+      {adminToast && (
+        <div className={`text-sm px-3 py-2 rounded-md border ${
+          adminToast.kind === 'success'
+            ? 'border-green-500/40 bg-green-500/10 text-green-300'
+            : 'border-red-500/40 bg-red-500/10 text-red-300'
+        }`}>
+          {adminToast.text}
+        </div>
+      )}
+
       {/* Controls */}
       <div className="flex items-center gap-3">
         <div className="flex bg-[#222] rounded-md p-0.5">
@@ -227,14 +297,16 @@ export default function Players() {
             const isExpanded = expanded === p.username
             const liveOnline = serverStatus === 'online' && consoleAvailable ? isOnlineLive(p.username) : p.currentlyOnline
             const isSynthetic = !p.firstSeen
+            const showAdminButtons = liveOnline
+            const actionOpen = adminAction?.name === p.username ? adminAction : null
             return (
               <div
                 key={p.username}
                 className={`bg-[#1a1a1a] border rounded-md overflow-hidden ${liveOnline ? 'border-green-500/40' : 'border-[#333]'}`}
               >
-                <button
+                <div
                   onClick={() => setExpanded(isExpanded ? null : p.username)}
-                  className="w-full flex items-center justify-between px-4 py-3 hover:bg-[#222] transition-colors"
+                  className="w-full flex items-center justify-between px-4 py-3 hover:bg-[#222] transition-colors cursor-pointer"
                 >
                   <div className="flex items-center gap-3 min-w-0">
                     {isExpanded ? <ChevronDown size={16} className="text-[#666]" /> : <ChevronRight size={16} className="text-[#666]" />}
@@ -265,8 +337,72 @@ export default function Players() {
                       <p className="text-[#a0a0a0]">Total time</p>
                       <p className="font-medium">{formatDuration(p.totalPlayMs)}</p>
                     </div>
+                    {showAdminButtons && (
+                      <div className="flex items-center gap-1">
+                        <button
+                          onClick={(e) => { e.stopPropagation(); openAction(p.username, 'kick') }}
+                          disabled={!adminAvailable}
+                          title={adminAvailable ? `Kick ${p.username}` : adminTooltip}
+                          className="p-1.5 rounded hover:bg-amber-500/20 text-amber-400 disabled:opacity-30 disabled:hover:bg-transparent disabled:cursor-not-allowed"
+                        >
+                          <UserX size={14} />
+                        </button>
+                        <button
+                          onClick={(e) => { e.stopPropagation(); openAction(p.username, 'ban') }}
+                          disabled={!adminAvailable}
+                          title={adminAvailable ? `Ban ${p.username}` : adminTooltip}
+                          className="p-1.5 rounded hover:bg-red-500/20 text-red-400 disabled:opacity-30 disabled:hover:bg-transparent disabled:cursor-not-allowed"
+                        >
+                          <Ban size={14} />
+                        </button>
+                      </div>
+                    )}
                   </div>
-                </button>
+                </div>
+
+                {actionOpen && (
+                  <div
+                    onClick={(e) => e.stopPropagation()}
+                    className={`px-4 py-3 border-t ${actionOpen.kind === 'ban' ? 'border-red-500/40 bg-red-500/5' : 'border-amber-500/40 bg-amber-500/5'}`}
+                  >
+                    <div className="flex items-center gap-2 mb-2">
+                      {actionOpen.kind === 'ban'
+                        ? <Ban size={14} className="text-red-400" />
+                        : <UserX size={14} className="text-amber-400" />}
+                      <p className="text-sm font-medium">
+                        {actionOpen.kind === 'ban' ? 'Ban' : 'Kick'} {p.username}?
+                      </p>
+                    </div>
+                    {actionOpen.kind === 'ban' && (
+                      <p className="text-xs text-red-300 mb-2 flex items-start gap-1">
+                        <ShieldAlert size={12} className="mt-0.5 shrink-0" />
+                        <span>This is permanent until manually unbanned via the server console.</span>
+                      </p>
+                    )}
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="text"
+                        value={adminReason}
+                        onChange={(e) => setAdminReason(e.target.value)}
+                        placeholder="Reason (optional)"
+                        className="input flex-1 text-sm"
+                      />
+                      <button
+                        onClick={handleAdminConfirm}
+                        disabled={adminBusy}
+                        className={`text-xs px-3 py-2 rounded font-medium disabled:opacity-50 ${actionOpen.kind === 'ban' ? 'bg-red-500/80 hover:bg-red-500 text-white' : 'bg-amber-500/80 hover:bg-amber-500 text-black'}`}
+                      >
+                        {adminBusy ? '…' : `Confirm ${actionOpen.kind}`}
+                      </button>
+                      <button
+                        onClick={() => { setAdminAction(null); setAdminReason('') }}
+                        className="btn-secondary text-xs"
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
+                )}
 
                 {isExpanded && (
                   <div className="px-4 pb-4 border-t border-[#333] bg-[#0f0f0f]">

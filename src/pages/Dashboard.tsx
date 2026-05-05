@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
-import { Play, Square, RotateCcw, Terminal, MessageSquare, Send, Wifi, WifiOff } from 'lucide-react'
+import { Play, Square, RotateCcw, Terminal, MessageSquare, Send, Wifi, WifiOff, UserX, Ban, ShieldAlert } from 'lucide-react'
 
 function formatUptime(sec: number) {
   if (!sec || sec <= 0) return '0m'
@@ -27,6 +27,13 @@ export default function Dashboard() {
   const [chatMessage, setChatMessage] = useState('')
   const [chatSending, setChatSending] = useState(false)
   const [chatError, setChatError] = useState<string | null>(null)
+
+  // Admin state — kick/ban for online players (stdin-backed)
+  const [rcon, setRcon] = useState<{ connected: boolean; hasPassword: boolean; serverOnline: boolean }>({ connected: false, hasPassword: false, serverOnline: false })
+  const [adminAction, setAdminAction] = useState<{ name: string; kind: 'kick' | 'ban' } | null>(null)
+  const [adminReason, setAdminReason] = useState('')
+  const [adminBusy, setAdminBusy] = useState(false)
+  const [adminToast, setAdminToast] = useState<{ kind: 'success' | 'error'; text: string } | null>(null)
 
   useEffect(() => {
     checkInstall()
@@ -77,6 +84,7 @@ export default function Dashboard() {
     if (status !== 'online') {
       setConsoleAvailable(false)
       setLivePlayers([])
+      setRcon({ connected: false, hasPassword: false, serverOnline: false })
       return
     }
     let cancelled = false
@@ -90,12 +98,46 @@ export default function Dashboard() {
           if (cancelled) return
           if (p?.success) setLivePlayers(p.players || [])
         }
+        const r = await window.electronAPI.adminRconStatus()
+        if (!cancelled && r?.success) {
+          setRcon({ connected: r.connected, hasPassword: r.hasPassword, serverOnline: r.serverOnline })
+        }
       } catch { /* ignore */ }
     }
     tick()
     const i = setInterval(tick, 5000)
     return () => { cancelled = true; clearInterval(i) }
   }, [status])
+
+  // Auto-dismiss admin toast
+  useEffect(() => {
+    if (!adminToast) return
+    const t = setTimeout(() => setAdminToast(null), 3000)
+    return () => clearTimeout(t)
+  }, [adminToast])
+
+  const adminAvailable = rcon.serverOnline
+  const adminTooltip = !rcon.serverOnline ? 'Server is not online' : ''
+
+  async function handleAdminConfirm() {
+    if (!adminAction) return
+    setAdminBusy(true)
+    try {
+      const reason = adminReason.trim() || undefined
+      const fn = adminAction.kind === 'kick' ? window.electronAPI.adminKick : window.electronAPI.adminBan
+      const verb = adminAction.kind === 'kick' ? 'Kicked' : 'Banned'
+      const r = await fn(adminAction.name, reason)
+      if (r?.success) {
+        setAdminToast({ kind: 'success', text: `${verb} ${adminAction.name}` })
+        setAdminAction(null)
+        setAdminReason('')
+      } else {
+        setAdminToast({ kind: 'error', text: r?.error || `Failed to ${adminAction.kind} ${adminAction.name}` })
+      }
+    } finally {
+      setAdminBusy(false)
+    }
+  }
 
   // Refresh server name when status flips so newly-saved settings get picked up.
   useEffect(() => { refreshHeaderInfo() }, [status])
@@ -230,14 +272,98 @@ export default function Dashboard() {
 
         {/* Live players */}
         <div>
-          <p className="text-xs text-[#a0a0a0] mb-1">Online players ({livePlayers.length})</p>
+          <div className="flex items-center justify-between mb-1">
+            <p className="text-xs text-[#a0a0a0]">Online players ({livePlayers.length})</p>
+            {consoleAvailable && (
+              <span
+                title={adminAvailable ? 'Admin actions ready — click a player to Kick/Ban' : adminTooltip}
+                className={`text-[10px] px-1.5 py-0.5 rounded font-mono inline-flex items-center gap-1 ${
+                  adminAvailable
+                    ? 'text-green-300 bg-green-500/10 border border-green-500/30'
+                    : 'text-[#888] bg-[#1f1f1f] border border-[#333]'
+                }`}
+              >
+                <ShieldAlert size={10} />
+                Admin {adminAvailable ? 'ready' : 'unavailable'}
+              </span>
+            )}
+          </div>
           {livePlayers.length === 0 ? (
             <p className="text-xs text-[#666] italic">{consoleAvailable ? 'No one connected.' : '—'}</p>
           ) : (
             <div className="flex flex-wrap gap-1">
-              {livePlayers.map((p) => (
-                <span key={p.name} className="text-xs px-2 py-0.5 rounded bg-blue-500/15 text-blue-300 font-mono">{p.name}</span>
-              ))}
+              {livePlayers.map((p) => {
+                const open = adminAction?.name === p.name
+                return (
+                  <div key={p.name} className="inline-flex items-center gap-0.5 bg-blue-500/15 text-blue-300 rounded font-mono">
+                    <span className="text-xs px-2 py-0.5">{p.name}</span>
+                    <button
+                      onClick={() => { setAdminAction({ name: p.name, kind: 'kick' }); setAdminReason('') }}
+                      disabled={!adminAvailable}
+                      title={adminAvailable ? `Kick ${p.name}` : adminTooltip}
+                      className={`px-1 py-0.5 rounded-r ${open && adminAction?.kind === 'kick' ? 'bg-amber-500/40 text-amber-200' : 'hover:bg-amber-500/20 hover:text-amber-300'} disabled:opacity-30 disabled:hover:bg-transparent`}
+                    >
+                      <UserX size={11} />
+                    </button>
+                    <button
+                      onClick={() => { setAdminAction({ name: p.name, kind: 'ban' }); setAdminReason('') }}
+                      disabled={!adminAvailable}
+                      title={adminAvailable ? `Ban ${p.name}` : adminTooltip}
+                      className={`px-1 py-0.5 rounded-r ${open && adminAction?.kind === 'ban' ? 'bg-red-500/40 text-red-200' : 'hover:bg-red-500/20 hover:text-red-300'} disabled:opacity-30 disabled:hover:bg-transparent`}
+                    >
+                      <Ban size={11} />
+                    </button>
+                  </div>
+                )
+              })}
+            </div>
+          )}
+
+          {adminAction && (
+            <div className={`mt-2 px-3 py-2 rounded-md border ${adminAction.kind === 'ban' ? 'border-red-500/40 bg-red-500/5' : 'border-amber-500/40 bg-amber-500/5'}`}>
+              <p className="text-sm font-medium flex items-center gap-2 mb-1">
+                {adminAction.kind === 'ban'
+                  ? <Ban size={14} className="text-red-400" />
+                  : <UserX size={14} className="text-amber-400" />}
+                {adminAction.kind === 'ban' ? 'Ban' : 'Kick'} {adminAction.name}?
+              </p>
+              {adminAction.kind === 'ban' && (
+                <p className="text-xs text-red-300 mb-2">
+                  This is permanent until manually unbanned via the server console.
+                </p>
+              )}
+              <div className="flex items-center gap-2">
+                <input
+                  type="text"
+                  value={adminReason}
+                  onChange={(e) => setAdminReason(e.target.value)}
+                  placeholder="Reason (optional)"
+                  className="input flex-1 text-sm"
+                />
+                <button
+                  onClick={handleAdminConfirm}
+                  disabled={adminBusy}
+                  className={`text-xs px-3 py-2 rounded font-medium disabled:opacity-50 ${adminAction.kind === 'ban' ? 'bg-red-500/80 hover:bg-red-500 text-white' : 'bg-amber-500/80 hover:bg-amber-500 text-black'}`}
+                >
+                  {adminBusy ? '…' : `Confirm ${adminAction.kind}`}
+                </button>
+                <button
+                  onClick={() => { setAdminAction(null); setAdminReason('') }}
+                  className="btn-secondary text-xs"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          )}
+
+          {adminToast && (
+            <div className={`mt-2 text-sm px-3 py-2 rounded-md border ${
+              adminToast.kind === 'success'
+                ? 'border-green-500/40 bg-green-500/10 text-green-300'
+                : 'border-red-500/40 bg-red-500/10 text-red-300'
+            }`}>
+              {adminToast.text}
             </div>
           )}
         </div>

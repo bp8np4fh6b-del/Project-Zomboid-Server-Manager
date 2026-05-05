@@ -10,10 +10,10 @@ interface Props {
 }
 
 const SECTION_ORDER: Array<{ key: keyof ChangelogSection; label: string; tone: string }> = [
-  { key: 'added', label: 'Added', tone: 'text-blue-300 bg-blue-500/10 border-blue-500/30' },
-  { key: 'fixed', label: 'Fixed', tone: 'text-green-300 bg-green-500/10 border-green-500/30' },
-  { key: 'qol', label: 'Quality of Life', tone: 'text-purple-300 bg-purple-500/10 border-purple-500/30' },
   { key: 'notes', label: 'Notes', tone: 'text-amber-300 bg-amber-500/10 border-amber-500/30' },
+  { key: 'added', label: 'Added', tone: 'text-blue-300 bg-blue-500/10 border-blue-500/30' },
+  { key: 'qol', label: 'Quality of Life', tone: 'text-purple-300 bg-purple-500/10 border-purple-500/30' },
+  { key: 'fixed', label: 'Fixed', tone: 'text-green-300 bg-green-500/10 border-green-500/30' },
 ]
 
 export default function ChangelogModal({ open, onClose, initialVersion }: Props) {
@@ -94,9 +94,19 @@ export default function ChangelogModal({ open, onClose, initialVersion }: Props)
               </div>
             )
           })}
+
+          <div className="pt-3 mt-2 border-t border-[#222]">
+            <button
+              onClick={() => window.electronAPI.openExternal(entry.url)}
+              className="text-xs text-[#888] hover:text-blue-400 underline-offset-2 hover:underline inline-flex items-center gap-1"
+            >
+              <ExternalLink size={11} />
+              View v{entry.version} release on GitHub
+            </button>
+          </div>
         </div>
 
-        {/* Footer: nav + GitHub link */}
+        {/* Footer: nav + close */}
         <div className="flex items-center justify-between px-5 py-3 border-t border-[#333] bg-[#161616]">
           <div className="flex items-center gap-2">
             <button
@@ -105,7 +115,7 @@ export default function ChangelogModal({ open, onClose, initialVersion }: Props)
               className="btn-secondary text-xs flex items-center gap-1 disabled:opacity-30"
               title="Older version"
             >
-              <ChevronLeft size={14} /> Older
+              <ChevronLeft size={14} /> Back
             </button>
             <button
               onClick={() => setIndex((i) => Math.max(0, i - 1))}
@@ -113,18 +123,17 @@ export default function ChangelogModal({ open, onClose, initialVersion }: Props)
               className="btn-secondary text-xs flex items-center gap-1 disabled:opacity-30"
               title="Newer version"
             >
-              Newer <ChevronRight size={14} />
+              Next <ChevronRight size={14} />
             </button>
             <span className="text-xs text-[#666] ml-2">
               {index + 1} / {CHANGELOG.length}
             </span>
           </div>
           <button
-            onClick={() => window.electronAPI.openExternal(entry.url)}
-            className="btn-secondary text-xs flex items-center gap-1.5"
+            onClick={onClose}
+            className="btn-secondary text-xs"
           >
-            <ExternalLink size={12} />
-            View on GitHub
+            Close
           </button>
         </div>
       </div>

@@ -1,6 +1,6 @@
 {
   "name": "pz-server-manager",
-  "version": "1.2.3",
+  "version": "0.2.3",
   "description": "Project Zomboid Build 42 Dedicated Server Manager",
   "main": "dist/main.js",
   "scripts": {
