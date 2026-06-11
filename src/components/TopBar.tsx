@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { Power, Download, RefreshCw, AlertCircle, CheckCircle2 } from 'lucide-react'
+import { Download, RefreshCw, AlertCircle, CheckCircle2, Users, Clock, Cpu, MemoryStick } from 'lucide-react'
 
 type UpdateState =
   | { kind: 'idle' }
@@ -10,15 +10,50 @@ type UpdateState =
   | { kind: 'upToDate' }
   | { kind: 'error'; message: string }
 
+function formatUptimeShort(ms: number) {
+  if (!ms || ms < 0) return '0m'
+  const sec = Math.floor(ms / 1000)
+  const h = Math.floor(sec / 3600)
+  const m = Math.floor((sec % 3600) / 60)
+  if (h > 0) return `${h}h ${m}m`
+  return `${m}m`
+}
+
+function formatRam(bytes: number) {
+  if (!bytes) return '—'
+  return `${(bytes / 1073741824).toFixed(1)} GB`
+}
+
 export default function TopBar({ title }: { title: string }) {
   const [status, setStatus] = useState('offline')
   const [update, setUpdate] = useState<UpdateState>({ kind: 'idle' })
+  const [metrics, setMetrics] = useState<{ cpuPercent: number; memoryBytes: number; uptime: number; onlineCount: number } | null>(null)
 
   useEffect(() => {
     const unsub = window.electronAPI.onServerStatus((s: string) => setStatus(s))
     window.electronAPI.getServerStatus().then((s: any) => setStatus(s.status))
     return unsub
   }, [])
+
+  // Live metrics for the persistent status strip — poll only while online.
+  useEffect(() => {
+    if (status !== 'online') {
+      setMetrics(null)
+      return
+    }
+    let cancelled = false
+    const tick = async () => {
+      try {
+        const m = await window.electronAPI.getServerMetrics()
+        if (!cancelled && m?.success) {
+          setMetrics({ cpuPercent: m.cpuPercent, memoryBytes: m.memoryBytes, uptime: m.uptime, onlineCount: m.onlineCount })
+        }
+      } catch { /* ignore */ }
+    }
+    tick()
+    const i = setInterval(tick, 5000)
+    return () => { cancelled = true; clearInterval(i) }
+  }, [status])
 
   useEffect(() => {
     const unsub = window.electronAPI.onUpdateEvent((kind, data) => {
@@ -119,10 +154,46 @@ export default function TopBar({ title }: { title: string }) {
     return null
   }
 
+  const dotColor: Record<string, string> = {
+    offline: 'bg-red-500',
+    starting: 'bg-amber-500 animate-pulse',
+    online: 'bg-green-500 animate-pulse',
+    stopping: 'bg-amber-500 animate-pulse',
+  }
+
   return (
-    <header className="h-14 bg-[#1a1a1a] border-b border-[#333] flex items-center justify-between px-6 shrink-0">
-      <h1 className="text-lg font-semibold text-white">{title}</h1>
-      <div className="flex items-center gap-3">
+    <header className="h-14 bg-[#1a1a1a] border-b border-[#333] flex items-center justify-between px-6 shrink-0 gap-4">
+      <div className="flex items-center gap-4 min-w-0">
+        <h1 className="text-lg font-semibold text-white shrink-0">{title}</h1>
+
+        {/* Persistent status strip — identical on every page */}
+        <div className="flex items-center gap-1.5 pl-4 border-l border-[#2a2a2a] text-xs text-[#a0a0a0] overflow-hidden">
+          <span className={`w-2 h-2 rounded-full shrink-0 ${dotColor[status] || 'bg-[#555]'}`} />
+          <span className={`uppercase font-medium shrink-0 ${statusColor[status]}`}>{status}</span>
+          {status === 'online' && metrics && (
+            <>
+              <span className="text-[#444] px-1">·</span>
+              <span className="flex items-center gap-1 shrink-0" title="Players online">
+                <Users size={12} /> {metrics.onlineCount}
+              </span>
+              <span className="text-[#444] px-1">·</span>
+              <span className="flex items-center gap-1 shrink-0" title="Uptime">
+                <Clock size={12} /> {formatUptimeShort(metrics.uptime)}
+              </span>
+              <span className="text-[#444] px-1">·</span>
+              <span className="flex items-center gap-1 shrink-0" title="Server CPU">
+                <Cpu size={12} /> {metrics.cpuPercent.toFixed(0)}%
+              </span>
+              <span className="text-[#444] px-1">·</span>
+              <span className="flex items-center gap-1 shrink-0" title="Server RAM (working set)">
+                <MemoryStick size={12} /> {formatRam(metrics.memoryBytes)}
+              </span>
+            </>
+          )}
+        </div>
+      </div>
+
+      <div className="flex items-center gap-3 shrink-0">
         {/* Single update element: when idle, the manual-check button. When
             anything else (checking / available / downloading / downloaded /
             upToDate / error), the pill replaces it — never two at once. */}
@@ -138,10 +209,6 @@ export default function TopBar({ title }: { title: string }) {
         ) : (
           updatePill()
         )}
-        <div className="flex items-center gap-2 px-3 py-1.5 rounded-md bg-[#222] border border-[#333]">
-          <Power size={14} className={statusColor[status]} />
-          <span className="text-xs font-medium text-[#a0a0a0] uppercase">{status}</span>
-        </div>
       </div>
     </header>
   )

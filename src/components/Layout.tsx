@@ -4,6 +4,7 @@ import TopBar from './TopBar'
 
 const pageTitles: Record<string, string> = {
   '/': 'Dashboard',
+  '/console': 'Console',
   '/install': 'Installer',
   '/settings': 'Server Settings',
   '/sandbox': 'Sandbox / Gameplay',
@@ -15,12 +16,15 @@ const pageTitles: Record<string, string> = {
 
 export default function Layout() {
   const location = useLocation()
+  // The Console page owns its full area (pinned input, internal scrolling) —
+  // every other page gets the standard padded scroll container.
+  const fullBleed = location.pathname === '/console'
   return (
     <div className="flex h-screen bg-[#0f0f0f] text-[#e0e0e0] overflow-hidden">
       <Sidebar />
       <div className="flex-1 flex flex-col min-w-0">
         <TopBar title={pageTitles[location.pathname] || 'Dashboard'} />
-        <main className="flex-1 overflow-auto p-6">
+        <main className={fullBleed ? 'flex-1 overflow-hidden relative' : 'flex-1 overflow-auto p-6'}>
           <Outlet />
         </main>
       </div>

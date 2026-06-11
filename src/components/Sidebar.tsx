@@ -10,20 +10,43 @@ import {
   Skull,
   Trash2,
   Sparkles,
+  Terminal,
+  ChevronDown,
+  ChevronRight,
 } from 'lucide-react'
 import { useState, useEffect } from 'react'
 import ChangelogModal from './ChangelogModal'
 
-const navLinks = [
-  { label: 'Dashboard', path: '/', icon: LayoutDashboard },
-  { label: 'Installer', path: '/install', icon: Download },
-  { label: 'Settings', path: '/settings', icon: Settings },
-  { label: 'Sandbox', path: '/sandbox', icon: Skull },
-  { label: 'Mods', path: '/mods', icon: Package },
-  { label: 'Players', path: '/players', icon: Users },
-  { label: 'Monitoring', path: '/monitoring', icon: Activity },
-  { label: 'Wipe', path: '/wipe', icon: Trash2 },
+// Grouped like established server panels: day-to-day server operation up
+// top, content/config in the middle, rare system actions at the bottom.
+const navGroups = [
+  {
+    label: 'Server',
+    links: [
+      { label: 'Dashboard', path: '/', icon: LayoutDashboard },
+      { label: 'Console', path: '/console', icon: Terminal },
+      { label: 'Players', path: '/players', icon: Users },
+      { label: 'Monitoring', path: '/monitoring', icon: Activity },
+    ],
+  },
+  {
+    label: 'Content',
+    links: [
+      { label: 'Mods', path: '/mods', icon: Package },
+      { label: 'Sandbox', path: '/sandbox', icon: Skull },
+      { label: 'Settings', path: '/settings', icon: Settings },
+    ],
+  },
+  {
+    label: 'System',
+    links: [
+      { label: 'Installer', path: '/install', icon: Download },
+      { label: 'Wipe', path: '/wipe', icon: Trash2 },
+    ],
+  },
 ]
+
+const COLLAPSED_GROUPS_KEY = 'pz-manager.collapsedGroups'
 
 const statusColor: Record<string, string> = {
   offline: 'bg-red-500',
@@ -39,6 +62,17 @@ export default function Sidebar() {
   const [status, setStatus] = useState('offline')
   const [version, setVersion] = useState('')
   const [changelogOpen, setChangelogOpen] = useState(false)
+  const [collapsed, setCollapsed] = useState<Record<string, boolean>>(() => {
+    try { return JSON.parse(localStorage.getItem(COLLAPSED_GROUPS_KEY) || '{}') } catch { return {} }
+  })
+
+  const toggleGroup = (label: string) => {
+    setCollapsed((prev) => {
+      const next = { ...prev, [label]: !prev[label] }
+      try { localStorage.setItem(COLLAPSED_GROUPS_KEY, JSON.stringify(next)) } catch { /* ignore */ }
+      return next
+    })
+  }
 
   useEffect(() => {
     const unsub = window.electronAPI.onServerStatus((s: string) => setStatus(s))
@@ -66,23 +100,45 @@ export default function Sidebar() {
         <span className="font-bold text-sm tracking-wider text-white">PZ MANAGER</span>
       </div>
 
-      <nav className="flex-1 px-3 py-4 space-y-1">
-        {navLinks.map((link) => {
-          const isActive = location.pathname === link.path
-          const Icon = link.icon
+      <nav className="flex-1 px-3 py-3 space-y-3 overflow-y-auto">
+        {navGroups.map((group) => {
+          const isCollapsed = !!collapsed[group.label]
+          // Keep the group open when it contains the active page so the user
+          // never loses sight of where they are.
+          const containsActive = group.links.some((l) => l.path === location.pathname)
+          const open = !isCollapsed || containsActive
           return (
-            <Link
-              key={link.path}
-              to={link.path}
-              className={`flex items-center gap-3 px-3 py-2.5 rounded-md text-sm font-medium transition-all ${
-                isActive
-                  ? 'bg-[#1f1f1f] text-white border-l-[3px] border-red-500'
-                  : 'text-[#a0a0a0] hover:text-white hover:bg-[#2a2a2a]'
-              }`}
-            >
-              <Icon size={18} />
-              {link.label}
-            </Link>
+            <div key={group.label}>
+              <button
+                onClick={() => toggleGroup(group.label)}
+                className="w-full flex items-center justify-between px-3 py-1 text-[10px] font-semibold uppercase tracking-widest text-[#666] hover:text-[#999]"
+              >
+                {group.label}
+                {open ? <ChevronDown size={11} /> : <ChevronRight size={11} />}
+              </button>
+              {open && (
+                <div className="mt-1 space-y-0.5">
+                  {group.links.map((link) => {
+                    const isActive = location.pathname === link.path
+                    const Icon = link.icon
+                    return (
+                      <Link
+                        key={link.path}
+                        to={link.path}
+                        className={`flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium transition-all ${
+                          isActive
+                            ? 'bg-[#1f1f1f] text-white border-l-[3px] border-red-500'
+                            : 'text-[#a0a0a0] hover:text-white hover:bg-[#2a2a2a]'
+                        }`}
+                      >
+                        <Icon size={17} />
+                        {link.label}
+                      </Link>
+                    )
+                  })}
+                </div>
+              )}
+            </div>
           )
         })}
       </nav>

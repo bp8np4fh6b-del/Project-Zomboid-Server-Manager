@@ -1,6 +1,8 @@
-import { useState, useEffect, useRef } from 'react'
-import { Play, Square, RotateCcw, Terminal, MessageSquare, Send, Wifi, WifiOff, UserX, Ban, ShieldAlert } from 'lucide-react'
+import { useState, useEffect } from 'react'
+import { useNavigate } from 'react-router-dom'
+import { Play, Square, RotateCcw, Terminal, MessageSquare, Send, Wifi, WifiOff, UserX, Ban, ShieldAlert, Cpu, MemoryStick, Users, Activity, LogIn, LogOut, Server, RotateCw, AlertCircle } from 'lucide-react'
 import { useAdminActions } from '../hooks/useAdminActions'
+import Sparkline from '../components/Sparkline'
 
 function formatUptime(sec: number) {
   if (!sec || sec <= 0) return '0m'
@@ -10,12 +12,46 @@ function formatUptime(sec: number) {
   return `${m}m ${sec % 60}s`
 }
 
+function formatRam(bytes: number) {
+  if (!bytes) return '—'
+  return `${(bytes / 1073741824).toFixed(1)} GB`
+}
+
+function formatRelative(iso: string) {
+  if (!iso) return '—'
+  const ms = Date.now() - new Date(iso).getTime()
+  if (ms < 5000) return 'just now'
+  if (ms < 60000) return `${Math.floor(ms / 1000)}s ago`
+  if (ms < 3600000) return `${Math.floor(ms / 60000)}m ago`
+  if (ms < 86400000) return `${Math.floor(ms / 3600000)}h ago`
+  return new Date(iso).toLocaleString()
+}
+
+function eventIcon(kind: string) {
+  switch (kind) {
+    case 'connect': return <LogIn size={13} className="text-green-400" />
+    case 'disconnect': return <LogOut size={13} className="text-amber-400" />
+    case 'server': return <Server size={13} className="text-blue-400" />
+    case 'restart': return <RotateCw size={13} className="text-purple-400" />
+    case 'admin': return <ShieldAlert size={13} className="text-red-300" />
+    case 'error': return <AlertCircle size={13} className="text-red-400" />
+    default: return <Activity size={13} className="text-[#888]" />
+  }
+}
+
+interface MetricsState {
+  cpuPercent: number
+  memoryBytes: number
+  history: Array<{ t: number; cpuPercent: number; memoryBytes: number; onlineCount: number }>
+}
+
 export default function Dashboard() {
+  const navigate = useNavigate()
   const [status, setStatus] = useState('offline')
-  const [logs, setLogs] = useState<string[]>([])
   const [uptime, setUptime] = useState(0)
   const [isInstalled, setIsInstalled] = useState(false)
-  const logEndRef = useRef<HTMLDivElement>(null)
+  const [metrics, setMetrics] = useState<MetricsState | null>(null)
+  const [events, setEvents] = useState<Array<{ at: string; kind: string; message: string }>>([])
 
   // Header info
   const [serverName, setServerName] = useState('Project Zomboid Server')
@@ -52,18 +88,24 @@ export default function Dashboard() {
     return () => clearInterval(i)
   }, [])
 
+  // Metrics + recent-events poll — drives the graphs and the activity card.
   useEffect(() => {
-    const unsub = window.electronAPI.onServerLog((data: any) => {
-      if (data && typeof data.line === 'string') {
-        setLogs((prev) => [...prev.slice(-199), data.line])
-      }
-    })
-    return unsub
+    let cancelled = false
+    const tick = async () => {
+      try {
+        const [m, ev] = await Promise.all([
+          window.electronAPI.getServerMetrics(),
+          window.electronAPI.getActivity(),
+        ])
+        if (cancelled) return
+        if (m?.success) setMetrics({ cpuPercent: m.cpuPercent, memoryBytes: m.memoryBytes, history: m.history || [] })
+        if (ev?.success) setEvents(ev.events.slice(0, 8))
+      } catch { /* ignore */ }
+    }
+    tick()
+    const i = setInterval(tick, 5000)
+    return () => { cancelled = true; clearInterval(i) }
   }, [])
-
-  useEffect(() => {
-    logEndRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }, [logs])
 
   async function checkInstall() {
     const s = await window.electronAPI.getInstallStatus()
@@ -226,6 +268,45 @@ export default function Dashboard() {
         </div>
       </div>
 
+      {/* Metric graphs — CPU / RAM / players over the last ~10 minutes. */}
+      <div className="grid grid-cols-3 gap-4">
+        <div className="card !p-3">
+          <div className="flex items-center justify-between mb-1">
+            <p className="text-xs text-[#a0a0a0] flex items-center gap-1.5"><Cpu size={12} /> CPU</p>
+            <p className="text-sm font-semibold">{status === 'online' && metrics ? `${metrics.cpuPercent.toFixed(0)}%` : '—'}</p>
+          </div>
+          <Sparkline
+            points={(metrics?.history || []).map((h) => h.cpuPercent)}
+            max={100}
+            stroke="#3498db"
+            fill="rgba(52, 152, 219, 0.12)"
+          />
+        </div>
+        <div className="card !p-3">
+          <div className="flex items-center justify-between mb-1">
+            <p className="text-xs text-[#a0a0a0] flex items-center gap-1.5"><MemoryStick size={12} /> RAM</p>
+            <p className="text-sm font-semibold">{status === 'online' && metrics ? formatRam(metrics.memoryBytes) : '—'}</p>
+          </div>
+          <Sparkline
+            points={(metrics?.history || []).map((h) => h.memoryBytes)}
+            stroke="#9b59b6"
+            fill="rgba(155, 89, 182, 0.12)"
+          />
+        </div>
+        <div className="card !p-3">
+          <div className="flex items-center justify-between mb-1">
+            <p className="text-xs text-[#a0a0a0] flex items-center gap-1.5"><Users size={12} /> Players</p>
+            <p className="text-sm font-semibold">{status === 'online' ? livePlayers.length : '—'}</p>
+          </div>
+          <Sparkline
+            points={(metrics?.history || []).map((h) => h.onlineCount)}
+            max={Math.max(4, ...(metrics?.history || []).map((h) => h.onlineCount))}
+            stroke="#2ecc71"
+            fill="rgba(46, 204, 113, 0.12)"
+          />
+        </div>
+      </div>
+
       {/* Live Console — visible always; controls activate when the server
           is online. Sends commands via the spawned process's stdin. */}
       <div className="card space-y-4">
@@ -370,30 +451,35 @@ export default function Dashboard() {
         </div>
       </div>
 
-      {/* Server Logs */}
+      {/* Recent events — compact activity feed; full feed lives on Monitoring,
+          raw output lives on the Console page. */}
       <div className="card">
         <div className="flex items-center justify-between mb-3">
           <h3 className="font-semibold flex items-center gap-2">
-            <Terminal size={16} /> Server Logs
+            <Activity size={16} /> Recent Events
           </h3>
-          <button
-            onClick={() => setLogs([])}
-            className="text-xs text-[#a0a0a0] hover:text-white"
-          >
-            Clear
-          </button>
+          <div className="flex gap-2">
+            <button onClick={() => navigate('/monitoring')} className="text-xs text-[#a0a0a0] hover:text-white">
+              Full feed →
+            </button>
+            <button onClick={() => navigate('/console')} className="text-xs text-[#a0a0a0] hover:text-white flex items-center gap-1">
+              <Terminal size={11} /> Console →
+            </button>
+          </div>
         </div>
-        <div className="bg-[#0f0f0f] rounded-md p-3 h-64 overflow-y-auto font-mono text-xs space-y-1">
-          {logs.length === 0 && (
-            <p className="text-[#666] italic">No logs yet. Start the server to see output.</p>
-          )}
-          {logs.map((line, i) => (
-            <div key={i} className="text-[#a0a0a0] truncate hover:text-white hover:whitespace-normal">
-              {line || ''}
-            </div>
-          ))}
-          <div ref={logEndRef} />
-        </div>
+        {events.length === 0 ? (
+          <p className="text-xs text-[#666] italic">Nothing yet. Server starts, player joins, restarts, and admin actions show up here.</p>
+        ) : (
+          <div className="space-y-1">
+            {events.map((ev, i) => (
+              <div key={i} className="flex items-center gap-3 px-2 py-1.5 rounded bg-[#1a1a1a] text-sm">
+                <span className="shrink-0">{eventIcon(ev.kind)}</span>
+                <span className="flex-1 min-w-0 truncate">{ev.message}</span>
+                <span className="text-xs text-[#666] font-mono shrink-0">{formatRelative(ev.at)}</span>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
     </div>
   )

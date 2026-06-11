@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { HashRouter, Routes, Route } from 'react-router-dom'
 import Layout from './components/Layout'
 import Dashboard from './pages/Dashboard'
+import Console from './pages/Console'
 import Installer from './pages/Installer'
 import Settings from './pages/Settings'
 import Mods from './pages/Mods'
@@ -26,6 +27,7 @@ function AppRoutes() {
     <Routes>
       <Route path="/" element={<Layout />}>
         <Route index element={<Dashboard />} />
+        <Route path="console" element={<Console />} />
         <Route path="install" element={<Installer />} />
         <Route path="settings" element={<Settings />} />
         <Route path="sandbox" element={<Sandbox />} />

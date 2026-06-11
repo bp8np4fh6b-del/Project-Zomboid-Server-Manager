@@ -1203,6 +1203,8 @@ async function startServer(opts: any = {}) {
           pushActivity({ at: new Date().toISOString(), kind: 'server', message: 'Server is online' })
           // Start polling the live player list via stdin `players` command.
           setTimeout(() => { startLivePlayersPoll() }, 1500)
+          // Start CPU/RAM sampling of the Java process.
+          startMetricsPoll()
           // Activate scheduled-restart timers now that the server is up.
           rescheduleAll()
         }
@@ -1241,6 +1243,7 @@ async function startServer(opts: any = {}) {
       broadcastLog(`Server process exited with code ${code}`, code === 0 ? 'info' : 'error')
       serverStatus = 'offline'
       serverProcess = null
+      stopMetricsPoll()
       broadcastStatus()
     })
 
@@ -1278,6 +1281,7 @@ async function stopServer() {
   pushActivity({ at: new Date().toISOString(), kind: 'server', message: 'Server stopping' })
   clearAllScheduleTimers()
   stopLivePlayersPoll()
+  stopMetricsPoll()
 
   // Kill IMMEDIATELY — no 10 second delay. PZ doesn't have a graceful
   // SIGTERM path on Windows anyway; the in-game `quit` console command is
@@ -3085,20 +3089,100 @@ function getLocalIp() {
 }
 
 // ═══════════════════════════════════════════════════════════════
-// SERVER METRICS — kept as a thin stub for back-compat. The Monitoring tab
-// in v1.2.1 is the activity feed; CPU/RAM charts via pidusage were dropped.
+// SERVER METRICS — CPU% + RAM of the actual Java server process.
+//
+// serverProcess is a cmd.exe wrapper; the interesting process is the Java
+// grandchild. We resolve it via the UDP port holder (same trick stopServer
+// uses), then sample TotalProcessorTime + WorkingSet64 with PowerShell every
+// 5s while online. CPU% is the delta of processor time over wall time,
+// normalised by core count. History keeps the last 120 points (~10 min).
 // ═══════════════════════════════════════════════════════════════
+
+const METRICS_INTERVAL_MS = 5000
+const METRICS_HISTORY_MAX = 120
+const NUM_CORES = Math.max(1, require('os').cpus().length)
+
+let metricsHistory: Array<{ t: number; cpuPercent: number; memoryBytes: number; onlineCount: number }> = []
+let metricsTimer: any = null
+let metricsJavaPid: number | null = null
+let lastCpuSample: { wallMs: number; cpuMs: number } | null = null
+let metricsSampling = false
+
+async function sampleMetricsOnce() {
+  if (metricsSampling || serverStatus !== 'online') return
+  metricsSampling = true
+  try {
+    if (!metricsJavaPid) {
+      metricsJavaPid = await findPortHolder(DEFAULT_PORT)
+      lastCpuSample = null
+    }
+    if (!metricsJavaPid) return
+
+    const pid = metricsJavaPid
+    const out = await new Promise<string>((resolve) => {
+      exec(
+        `powershell -NoProfile -Command "$p = Get-Process -Id ${pid} -ErrorAction SilentlyContinue; if ($p) { Write-Output ([string]$p.TotalProcessorTime.TotalMilliseconds + '|' + [string]$p.WorkingSet64) }"`,
+        { timeout: 8000 },
+        (_err: any, stdout: string) => resolve((stdout || '').trim())
+      )
+    })
+    const m = out.match(/^([\d.]+)\|(\d+)$/)
+    if (!m) {
+      // Process is gone (restart in flight?) — drop the cached pid and retry next tick.
+      metricsJavaPid = null
+      lastCpuSample = null
+      return
+    }
+    const cpuMs = parseFloat(m[1])
+    const memoryBytes = parseInt(m[2], 10)
+    const wallMs = Date.now()
+
+    let cpuPercent = 0
+    if (lastCpuSample && wallMs > lastCpuSample.wallMs) {
+      cpuPercent = ((cpuMs - lastCpuSample.cpuMs) / (wallMs - lastCpuSample.wallMs)) * 100 / NUM_CORES
+      cpuPercent = Math.max(0, Math.min(100, cpuPercent))
+    }
+    lastCpuSample = { wallMs, cpuMs }
+
+    metricsHistory.push({
+      t: wallMs,
+      cpuPercent: Math.round(cpuPercent * 10) / 10,
+      memoryBytes,
+      onlineCount: getOnlineCount().count,
+    })
+    if (metricsHistory.length > METRICS_HISTORY_MAX) {
+      metricsHistory.splice(0, metricsHistory.length - METRICS_HISTORY_MAX)
+    }
+  } catch { /* sampling is best-effort */ }
+  finally { metricsSampling = false }
+}
+
+function startMetricsPoll() {
+  stopMetricsPoll()
+  metricsHistory = []
+  metricsJavaPid = null
+  lastCpuSample = null
+  metricsTimer = setInterval(() => { sampleMetricsOnce() }, METRICS_INTERVAL_MS)
+  sampleMetricsOnce()
+}
+
+function stopMetricsPoll() {
+  if (metricsTimer) { clearInterval(metricsTimer); metricsTimer = null }
+  metricsJavaPid = null
+  lastCpuSample = null
+}
 
 async function getServerMetrics() {
   const isRunning = !!(serverProcess && !serverProcess.killed && serverStatus === 'online')
+  const latest = metricsHistory[metricsHistory.length - 1]
   return {
     success: true,
     running: isRunning,
-    cpuPercent: 0,
-    memoryBytes: 0,
+    cpuPercent: isRunning && latest ? latest.cpuPercent : 0,
+    memoryBytes: isRunning && latest ? latest.memoryBytes : 0,
     uptime: isRunning && serverUptime ? Date.now() - serverUptime : 0,
     onlineCount: getOnlineCount().count,
-    history: [] as Array<{ t: number; cpuPercent: number; memoryBytes: number; onlineCount: number }>,
+    history: isRunning ? metricsHistory.slice() : [],
   }
 }
 
