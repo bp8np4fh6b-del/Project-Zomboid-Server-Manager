@@ -83,6 +83,26 @@ export interface WorkshopItemInfo {
   updateAvailable?: boolean
 }
 
+export interface WorkshopSearchItem {
+  id: string
+  title?: string
+  description?: string
+  previewUrl?: string
+  fileSize?: number
+  timeUpdated?: number
+  subscriptions?: number
+  voteScore?: number
+  votesUp?: number
+  installed?: boolean
+}
+
+export interface InstalledModDetail extends ModItem {
+  previewUrl?: string
+  fileSize?: number
+  timeUpdated?: number
+  subscriptions?: number
+}
+
 export interface WipeScopeInput {
   world?: boolean
   players?: boolean
@@ -145,6 +165,9 @@ declare global {
       deleteBackup: (name: string) => Promise<any>
       workshopLookup: (input: string) => Promise<{ success: boolean; item?: WorkshopItemInfo; error?: string }>
       checkModUpdates: () => Promise<{ success: boolean; items: WorkshopItemInfo[]; error?: string; message?: string }>
+      workshopSearch: (opts: { query?: string; sort?: string; page?: number }) => Promise<{ success: boolean; items: WorkshopSearchItem[]; total: number; page?: number; needsKey?: boolean; error?: string }>
+      workshopGetCollection: (input: string) => Promise<{ success: boolean; collection?: { id: string; title: string }; items?: WorkshopSearchItem[]; error?: string }>
+      getInstalledModsDetails: () => Promise<{ success: boolean; mods: InstalledModDetail[]; needsRedetect?: boolean; error?: string }>
       wipeServer: (scope: WipeScopeInput) => Promise<{ success: boolean; removed: string[]; failed: string[]; message?: string; error?: string }>
       getPlayerHistory: () => Promise<{ success: boolean; players: PlayerRecord[]; count: number }>
       clearPlayerHistory: () => Promise<any>

@@ -355,6 +355,9 @@ ipcMain.handle('backup:delete', async (_e: any, name: string) => backend.deleteB
 // Workshop
 ipcMain.handle('workshop:lookup', async (_e: any, input: string) => backend.getWorkshopInfo(input))
 ipcMain.handle('workshop:checkUpdates', async () => backend.checkAllModUpdates())
+ipcMain.handle('workshop:search', async (_e: any, opts: any) => backend.workshopSearch(opts || {}))
+ipcMain.handle('workshop:collection', async (_e: any, input: string) => backend.workshopGetCollection(input))
+ipcMain.handle('mods:details', async () => backend.getInstalledModsDetails())
 
 // Wipe
 ipcMain.handle('wipe:server', async (_e: any, scope: any) => backend.wipeServer(scope))

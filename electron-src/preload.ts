@@ -57,6 +57,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // Workshop
   workshopLookup: (input: string) => ipcRenderer.invoke('workshop:lookup', input),
   checkModUpdates: () => ipcRenderer.invoke('workshop:checkUpdates'),
+  workshopSearch: (opts: { query?: string; sort?: string; page?: number }) => ipcRenderer.invoke('workshop:search', opts),
+  workshopGetCollection: (input: string) => ipcRenderer.invoke('workshop:collection', input),
+  getInstalledModsDetails: () => ipcRenderer.invoke('mods:details'),
 
   // Wipe
   wipeServer: (scope: any) => ipcRenderer.invoke('wipe:server', scope),

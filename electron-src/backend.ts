@@ -2292,6 +2292,15 @@ function removeMod(id: string) {
     const wid = String(id || '').trim()
     if (!wid) return { success: false, error: 'Missing workshopId.' }
 
+    // Delete the downloaded workshop content from disk too — removing a mod
+    // should fully clean up, not just edit the INI. Guard the path: only
+    // delete when wid is purely numeric so a malformed id can't escape the
+    // content directory.
+    if (/^\d+$/.test(wid)) {
+      const contentDir = path.join(workshopCachePath, 'steamapps', 'workshop', 'content', PZ_GAME_APP_ID, wid)
+      try { fs.rmSync(contentDir, { recursive: true, force: true }) } catch { /* best-effort */ }
+    }
+
     const manifest = readManifest()
     const before = manifest.items.length
     manifest.items = manifest.items.filter((i) => i.workshopId !== wid)
@@ -2584,6 +2593,169 @@ async function checkAllModUpdates() {
     return { success: true, items: results }
   } catch (err: any) {
     return { success: false, error: err.message, items: [] }
+  }
+}
+
+// ── Workshop browser: search, collections, installed metadata ──────
+// Search uses IPublishedFileService/QueryFiles which requires a Steam Web
+// API key (Settings → App). Collections and per-item details use the
+// keyless ISteamRemoteStorage endpoints.
+
+function httpsGetJson(url: string): Promise<{ status: number; json: any }> {
+  return new Promise((resolve, reject) => {
+    const req = https.get(url, { headers: { 'User-Agent': 'PZ-Server-Manager/1.0' }, timeout: 10000 }, (res: any) => {
+      let body = ''
+      res.setEncoding('utf8')
+      res.on('data', (c: string) => { body += c })
+      res.on('end', () => {
+        try { resolve({ status: res.statusCode || 0, json: JSON.parse(body) }) }
+        catch { resolve({ status: res.statusCode || 0, json: null }) }
+      })
+    })
+    req.on('error', reject)
+    req.on('timeout', () => { req.destroy(new Error('Request timed out')) })
+  })
+}
+
+// EPublishedFileQueryType values used below:
+//   1 = RankedByPublicationDate, 3 = RankedByTrend,
+//   9 = RankedByTotalUniqueSubscriptions, 12 = RankedByTextSearch
+const WORKSHOP_SORTS: Record<string, number> = {
+  relevance: 12,
+  popular: 9,
+  trend: 3,
+  recent: 1,
+}
+
+async function workshopSearch(opts: { query?: string; sort?: string; page?: number }) {
+  const key = getAppPrefs().prefs.steamApiKey
+  if (!key) {
+    return { success: false, needsKey: true, error: 'Workshop search needs a Steam Web API key. Add one in Settings → App.', items: [], total: 0 }
+  }
+  const query = (opts?.query || '').trim()
+  const page = Math.max(1, Number(opts?.page) || 1)
+  let queryType = WORKSHOP_SORTS[opts?.sort || ''] ?? (query ? 12 : 9)
+  // Text-search ranking without text returns nothing useful — browse by subs.
+  if (!query && queryType === 12) queryType = 9
+
+  const params = new URLSearchParams({
+    key,
+    appid: String(PZ_APP_ID_GAME),
+    query_type: String(queryType),
+    page: String(page),
+    numperpage: '20',
+    search_text: query,
+    return_vote_data: 'true',
+    return_short_description: 'true',
+    format: 'json',
+  })
+  try {
+    const r = await httpsGetJson(`https://api.steampowered.com/IPublishedFileService/QueryFiles/v1/?${params.toString()}`)
+    if (r.status === 403) {
+      return { success: false, needsKey: true, error: 'Steam rejected the API key (HTTP 403). Check it in Settings → App.', items: [], total: 0 }
+    }
+    if (r.status !== 200 || !r.json) {
+      return { success: false, error: `Steam API HTTP ${r.status}`, items: [], total: 0 }
+    }
+    const resp = r.json.response || {}
+    const details: any[] = Array.isArray(resp.publishedfiledetails) ? resp.publishedfiledetails : []
+    const installed = new Set(readManifest().items.map((i) => i.workshopId))
+    const items = details.map((d: any) => ({
+      id: String(d.publishedfileid),
+      title: d.title,
+      description: d.short_description || '',
+      previewUrl: d.preview_url,
+      fileSize: d.file_size ? Number(d.file_size) : undefined,
+      timeUpdated: d.time_updated,
+      subscriptions: d.subscriptions,
+      voteScore: d.vote_data?.score,
+      votesUp: d.vote_data?.votes_up,
+      installed: installed.has(String(d.publishedfileid)),
+    }))
+    return { success: true, items, total: Number(resp.total) || items.length, page }
+  } catch (err: any) {
+    return { success: false, error: err.message, items: [], total: 0 }
+  }
+}
+
+// Resolve a collection URL/ID to its title + member items (with metadata).
+async function workshopGetCollection(input: string) {
+  const id = extractWorkshopId(input)
+  if (!id) return { success: false, error: 'Could not parse a collection ID from that input.' }
+  try {
+    const body = `collectioncount=1&publishedfileids%5B0%5D=${encodeURIComponent(id)}`
+    const res = await httpsPostForm('https://api.steampowered.com/ISteamRemoteStorage/GetCollectionDetails/v1/', body)
+    if (res.status !== 200) return { success: false, error: `Steam API HTTP ${res.status}` }
+    const json = JSON.parse(res.body)
+    const col = json?.response?.collectiondetails?.[0]
+    if (!col || col.result !== 1 || !Array.isArray(col.children)) {
+      return { success: false, error: 'That item is not a public collection (or it has no entries).' }
+    }
+    // filetype 0 = workshop item; skip nested collections / other types.
+    const childIds: string[] = col.children
+      .filter((c: any) => c.filetype === 0)
+      .sort((a: any, b: any) => (a.sortorder || 0) - (b.sortorder || 0))
+      .map((c: any) => String(c.publishedfileid))
+    if (childIds.length === 0) return { success: false, error: 'Collection has no workshop items.' }
+
+    // Title of the collection itself + details of members (chunks of 50).
+    const [meta] = await fetchWorkshopItems([id]).catch(() => [undefined as any])
+    const installed = new Set(readManifest().items.map((i) => i.workshopId))
+    const items: any[] = []
+    for (let i = 0; i < childIds.length; i += 50) {
+      const chunk = await fetchWorkshopItems(childIds.slice(i, i + 50))
+      for (const it of chunk) {
+        items.push({
+          id: it.id,
+          title: it.title,
+          previewUrl: it.previewUrl,
+          fileSize: it.fileSize,
+          timeUpdated: it.timeUpdated,
+          subscriptions: it.subscriptions,
+          installed: installed.has(it.id),
+        })
+      }
+    }
+    return { success: true, collection: { id, title: meta?.title || `Collection ${id}` }, items }
+  } catch (err: any) {
+    return { success: false, error: err.message }
+  }
+}
+
+// Metadata for the installed-mods cards: manifest entries enriched with
+// Workshop details (thumbnail, size, updated). Steam fetch is best-effort —
+// offline we fall back to the on-disk mod cache.
+async function getInstalledModsDetails() {
+  try {
+    const base = getMods()
+    if (!base.success) return { success: false, error: base.error, mods: [] }
+    const ids = base.mods.map((m: any) => m.workshopId)
+    let detailsById = new Map<string, WorkshopItem>()
+    if (ids.length) {
+      try {
+        const fresh: WorkshopItem[] = []
+        for (let i = 0; i < ids.length; i += 50) {
+          fresh.push(...await fetchWorkshopItems(ids.slice(i, i + 50)))
+        }
+        detailsById = new Map(fresh.map((d) => [d.id, d]))
+      } catch {
+        const cache = readModCache()
+        detailsById = new Map(Object.entries(cache))
+      }
+    }
+    const mods = base.mods.map((m: any) => {
+      const d = detailsById.get(m.workshopId)
+      return {
+        ...m,
+        previewUrl: d?.previewUrl,
+        fileSize: d?.fileSize,
+        timeUpdated: d?.timeUpdated,
+        subscriptions: d?.subscriptions,
+      }
+    })
+    return { success: true, mods, needsRedetect: base.needsRedetect }
+  } catch (err: any) {
+    return { success: false, error: err.message, mods: [] }
   }
 }
 
@@ -3047,6 +3219,9 @@ module.exports = {
   // Workshop
   getWorkshopInfo,
   checkAllModUpdates,
+  workshopSearch,
+  workshopGetCollection,
+  getInstalledModsDetails,
 
   // Wipe
   wipeServer,
