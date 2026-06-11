@@ -2,6 +2,8 @@
   "name": "pz-server-manager",
   "version": "0.2.3",
   "description": "Project Zomboid Build 42 Dedicated Server Manager",
+  "author": "bp8np4fh6b-del",
+  "license": "MIT",
   "main": "dist/main.js",
   "scripts": {
     "build": "npm run build:vite && npm run build:electron",

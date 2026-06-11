@@ -603,36 +603,21 @@ async function adminCommand(cmd: string) {
   return adminSendCommand(cmd)
 }
 
-function adminRconStatus() {
-  // Name retained for backwards compatibility with the existing IPC. The
-  // "RCON" naming is now historical — admin actions ride on the stdin
-  // console that broadcast / players-poll already use, so availability
-  // simply mirrors `serverStatus === 'online'`.
+function adminStatus() {
+  // Admin actions ride on the same stdin channel as broadcast / players
+  // poll. Availability simply mirrors `serverStatus === 'online'`.
   const ready = serverStatus === 'online'
   return {
     success: true,
-    connected: ready,
-    port: 0,
-    hasPassword: ready, // legacy field; kept true so the UI gates only on serverOnline
     serverOnline: ready,
     error: ready ? null : (lastConsoleError || null),
   }
 }
 
 // ═══════════════════════════════════════════════════════════════
-// RESTART SCHEDULER — queue clean restarts with player warnings
+// RESTART SEQUENCE — clean save → quit → relaunch.
+// Used by the daily Schedules subsystem (see rescheduleAll below).
 // ═══════════════════════════════════════════════════════════════
-
-interface ScheduledRestart {
-  id: string
-  scheduledFor: number   // ms epoch
-  warnings: number[]     // minutes-before-restart at which to broadcast
-  warningTimers: any[]
-  fireTimer: any
-  pendingRestartArgs?: any   // saved opts to relaunch with
-}
-
-let scheduledRestart: ScheduledRestart | null = null
 
 function broadcastActivity(kind: string, message: string) {
   pushActivity({ at: new Date().toISOString(), kind, message })
@@ -640,93 +625,16 @@ function broadcastActivity(kind: string, message: string) {
 
 async function executeScheduledRestart(opts: any) {
   broadcastActivity('restart', 'Executing scheduled restart…')
-  // Save then quit via RCON for a clean shutdown.
   try { sendServerCommand('save') } catch {}
-  // Small delay to let the save flush.
   await new Promise<void>((r) => setTimeout(r, 2500))
   try { sendServerCommand('quit') } catch {}
-  // The PZ process should exit on `quit`. Wait briefly, then force-stop if it didn't.
   await new Promise<void>((r) => setTimeout(r, 4000))
   if (serverStatus !== 'offline') {
     await stopServer()
   }
-  // Wait for sockets/files to release.
+  // Wait for sockets/files to release before relaunching.
   await new Promise<void>((r) => setTimeout(r, 3000))
   await startServer(opts || {})
-}
-
-function clearScheduledRestart() {
-  if (!scheduledRestart) return
-  for (const t of scheduledRestart.warningTimers) clearTimeout(t)
-  if (scheduledRestart.fireTimer) clearTimeout(scheduledRestart.fireTimer)
-  scheduledRestart = null
-}
-
-function scheduleRestart(delayMinutes: number, warnings: number[] = [5, 1], opts: any = {}) {
-  if (serverStatus !== 'online' && serverStatus !== 'starting') {
-    return { success: false, error: 'Server is not running.' }
-  }
-  if (!Number.isFinite(delayMinutes) || delayMinutes <= 0 || delayMinutes > 24 * 60) {
-    return { success: false, error: 'Delay must be between 1 minute and 24 hours.' }
-  }
-  // Replace any existing schedule.
-  clearScheduledRestart()
-
-  const scheduledFor = Date.now() + delayMinutes * 60 * 1000
-  const warningTimers: any[] = []
-
-  // Filter warnings to those that fall within the window and aren't in the past.
-  const validWarnings = warnings
-    .filter((w) => w > 0 && w < delayMinutes)
-    .sort((a, b) => b - a)
-
-  for (const w of validWarnings) {
-    const fireAt = scheduledFor - w * 60 * 1000
-    const ms = fireAt - Date.now()
-    if (ms <= 0) continue
-    const t = setTimeout(() => {
-      const msg = `Server restart in ${w} minute${w === 1 ? '' : 's'}.`
-      consoleBroadcast(msg)
-      broadcastActivity('restart', msg)
-    }, ms)
-    warningTimers.push(t)
-  }
-
-  const fireTimer = setTimeout(async () => {
-    const args = scheduledRestart?.pendingRestartArgs || opts
-    scheduledRestart = null
-    await executeScheduledRestart(args || {})
-  }, delayMinutes * 60 * 1000)
-
-  scheduledRestart = {
-    id: nodeCrypto.randomBytes(6).toString('hex'),
-    scheduledFor,
-    warnings: validWarnings,
-    warningTimers,
-    fireTimer,
-    pendingRestartArgs: opts,
-  }
-  broadcastActivity('restart', `Restart scheduled in ${delayMinutes} minute${delayMinutes === 1 ? '' : 's'}.`)
-  return { success: true, scheduledFor, warnings: validWarnings }
-}
-
-function cancelRestart() {
-  if (!scheduledRestart) return { success: false, error: 'No restart scheduled.' }
-  clearScheduledRestart()
-  broadcastActivity('restart', 'Scheduled restart cancelled.')
-  return { success: true }
-}
-
-function getScheduledRestart() {
-  if (!scheduledRestart) return { success: true, scheduled: null }
-  return {
-    success: true,
-    scheduled: {
-      scheduledFor: scheduledRestart.scheduledFor,
-      msRemaining: Math.max(0, scheduledRestart.scheduledFor - Date.now()),
-      warnings: scheduledRestart.warnings,
-    },
-  }
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -1184,7 +1092,6 @@ async function startServer(opts: any = {}) {
   // Stale "currentlyOnline" flags from a previous (uncleanly stopped) session
   // would otherwise mis-report players as still on. Clear them at start.
   resetOnlineFlags()
-  resetMetricsBuffer()
 
   broadcastLog(`Starting PZ Build 42 server "${serverName}"...`, 'info')
   broadcastLog(`Launcher: ${launcher}`, 'info')
@@ -1336,7 +1243,6 @@ async function stopServer() {
   broadcastStatus()
   broadcastLog('Stopping server...', 'info')
   pushActivity({ at: new Date().toISOString(), kind: 'server', message: 'Server stopping' })
-  clearScheduledRestart()
   clearAllScheduleTimers()
   stopLivePlayersPoll()
 
@@ -1503,8 +1409,6 @@ function ensureDefaultConfig() {
     'AllowDestructionBySledgehammer=true',
     'KickFastPlayers=false',
     'ServerPlayerID=',
-    'RCONPort=27015',
-    'RCONPassword=',
     'DiscordEnable=false',
     'DiscordToken=',
     'DiscordChannel=',
@@ -2387,11 +2291,6 @@ function removeMod(id: string) {
   }
 }
 
-function toggleMod(_id: string) {
-  // PZ has no "disabled but installed" state — the mod is in the list or it isn't.
-  return { success: true }
-}
-
 // ═══════════════════════════════════════════════════════════════
 // BACKUP / RESTORE
 // ═══════════════════════════════════════════════════════════════
@@ -2998,7 +2897,6 @@ async function getServerMetrics() {
   }
 }
 
-function resetMetricsBuffer() { /* no-op; kept for callers */ }
 
 // ═══════════════════════════════════════════════════════════════
 // CLEANUP
@@ -3059,11 +2957,11 @@ module.exports = {
   consoleBroadcast,
   consoleSendCommand,
 
-  // RCON admin actions (kick/ban/command/status)
+  // Admin actions (kick / ban / arbitrary command / status)
   adminKick,
   adminBan,
   adminCommand,
-  adminRconStatus,
+  adminStatus,
 
   // Chat feed (parsed from log)
   getChatLog,
@@ -3076,9 +2974,6 @@ module.exports = {
 
   // Misc helpers
   getLocalIp,
-  scheduleRestart,
-  cancelRestart,
-  getScheduledRestart,
   getActivity,
 
   // Server
@@ -3103,7 +2998,6 @@ module.exports = {
   getMods,
   addMod,
   removeMod,
-  toggleMod,
   redetectMod,
   redetectAllMissing,
 

@@ -40,7 +40,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
   getMods: () => ipcRenderer.invoke('mods:get'),
   addMod: (mod: any) => ipcRenderer.invoke('mods:add', mod),
   removeMod: (id: string) => ipcRenderer.invoke('mods:remove', id),
-  toggleMod: (id: string) => ipcRenderer.invoke('mods:toggle', id),
   redetectMod: (id: string) => ipcRenderer.invoke('mods:redetect', id),
   redetectAllMissing: () => ipcRenderer.invoke('mods:redetectAllMissing'),
   onModsProgress: (cb: (data: any) => void) => {
@@ -94,8 +93,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   consoleBroadcast: (message: string) => ipcRenderer.invoke('console:broadcast', message),
   consoleSend: (cmd: string) => ipcRenderer.invoke('console:send', cmd),
 
-  // RCON admin actions
-  adminRconStatus: () => ipcRenderer.invoke('admin:rconStatus'),
+  // Admin actions (stdin-backed)
+  adminStatus: () => ipcRenderer.invoke('admin:status'),
   adminKick: (name: string, reason?: string) => ipcRenderer.invoke('admin:kick', name, reason),
   adminBan: (name: string, reason?: string) => ipcRenderer.invoke('admin:ban', name, reason),
   adminCommand: (cmd: string) => ipcRenderer.invoke('admin:command', cmd),
@@ -111,12 +110,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   // Misc helpers
   getLocalIp: () => ipcRenderer.invoke('app:getLocalIp'),
-
-  // Restart scheduling
-  scheduleRestart: (delayMinutes: number, warnings?: number[]) =>
-    ipcRenderer.invoke('restart:schedule', { delayMinutes, warnings }),
-  cancelRestart: () => ipcRenderer.invoke('restart:cancel'),
-  getScheduledRestart: () => ipcRenderer.invoke('restart:get'),
 
   // Activity feed
   getActivity: () => ipcRenderer.invoke('activity:get'),

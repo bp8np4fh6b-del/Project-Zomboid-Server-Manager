@@ -202,8 +202,8 @@ ipcMain.handle('console:players', async () => backend.consoleGetPlayers())
 ipcMain.handle('console:broadcast', async (_e: any, message: string) => backend.consoleBroadcast(message))
 ipcMain.handle('console:send', async (_e: any, cmd: string) => backend.consoleSendCommand(cmd))
 
-// RCON admin actions (kick/ban/command/status)
-ipcMain.handle('admin:rconStatus', async () => backend.adminRconStatus())
+// Admin actions (kick / ban / arbitrary command / status)
+ipcMain.handle('admin:status', async () => backend.adminStatus())
 ipcMain.handle('admin:kick', async (_e: any, name: string, reason?: string) => backend.adminKick(name, reason))
 ipcMain.handle('admin:ban', async (_e: any, name: string, reason?: string) => backend.adminBan(name, reason))
 ipcMain.handle('admin:command', async (_e: any, cmd: string) => backend.adminCommand(cmd))
@@ -220,11 +220,6 @@ ipcMain.handle('schedules:delete', async (_e: any, id: string) => backend.delete
 // Misc app helpers
 ipcMain.handle('app:getLocalIp', async () => backend.getLocalIp())
 
-// Restart scheduling
-ipcMain.handle('restart:schedule', async (_e: any, payload: any) => backend.scheduleRestart(payload?.delayMinutes, payload?.warnings, payload?.opts))
-ipcMain.handle('restart:cancel', async () => backend.cancelRestart())
-ipcMain.handle('restart:get', async () => backend.getScheduledRestart())
-
 // Activity feed
 ipcMain.handle('activity:get', async () => backend.getActivity())
 
@@ -236,7 +231,6 @@ ipcMain.handle('players:clearUnmatched', async () => backend.clearUnmatchedEvent
 ipcMain.handle('mods:get', async () => backend.getMods())
 ipcMain.handle('mods:add', async (_e: any, mod: any) => backend.addMod(mod))
 ipcMain.handle('mods:remove', async (_e: any, id: string) => backend.removeMod(id))
-ipcMain.handle('mods:toggle', async (_e: any, id: string) => backend.toggleMod(id))
 ipcMain.handle('mods:redetect', async (_e: any, id: string) => backend.redetectMod(id))
 ipcMain.handle('mods:redetectAllMissing', async () => backend.redetectAllMissing())
 

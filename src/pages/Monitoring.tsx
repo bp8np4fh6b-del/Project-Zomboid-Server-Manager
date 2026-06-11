@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
-import { Activity, Clock, Users, LogIn, LogOut, Server, RotateCw, AlertCircle, MessageSquare, Trash2 } from 'lucide-react'
+import { Activity, Clock, Users, LogIn, LogOut, Server, RotateCw, AlertCircle, MessageSquare, Trash2, ShieldAlert } from 'lucide-react'
 
 interface ActivityEvent {
   at: string
@@ -33,6 +33,7 @@ function kindIcon(kind: string) {
     case 'disconnect': return <LogOut size={14} className="text-amber-400" />
     case 'server': return <Server size={14} className="text-blue-400" />
     case 'restart': return <RotateCw size={14} className="text-purple-400" />
+    case 'admin': return <ShieldAlert size={14} className="text-red-300" />
     case 'error': return <AlertCircle size={14} className="text-red-400" />
     default: return <Activity size={14} className="text-[#888]" />
   }

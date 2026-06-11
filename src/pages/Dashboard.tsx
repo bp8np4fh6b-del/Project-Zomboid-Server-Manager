@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { Play, Square, RotateCcw, Terminal, MessageSquare, Send, Wifi, WifiOff, UserX, Ban, ShieldAlert } from 'lucide-react'
+import { useAdminActions } from '../hooks/useAdminActions'
 
 function formatUptime(sec: number) {
   if (!sec || sec <= 0) return '0m'
@@ -21,19 +22,27 @@ export default function Dashboard() {
   const [localIp, setLocalIp] = useState<string | null>(null)
   const [port, setPort] = useState<string>('16261')
 
-  // Live console state (stdin-based, no RCON)
+  // Live console state (stdin-backed)
   const [consoleAvailable, setConsoleAvailable] = useState(false)
   const [livePlayers, setLivePlayers] = useState<Array<{ name: string }>>([])
   const [chatMessage, setChatMessage] = useState('')
   const [chatSending, setChatSending] = useState(false)
   const [chatError, setChatError] = useState<string | null>(null)
 
-  // Admin state — kick/ban for online players (stdin-backed)
-  const [rcon, setRcon] = useState<{ connected: boolean; hasPassword: boolean; serverOnline: boolean }>({ connected: false, hasPassword: false, serverOnline: false })
-  const [adminAction, setAdminAction] = useState<{ name: string; kind: 'kick' | 'ban' } | null>(null)
-  const [adminReason, setAdminReason] = useState('')
-  const [adminBusy, setAdminBusy] = useState(false)
-  const [adminToast, setAdminToast] = useState<{ kind: 'success' | 'error'; text: string } | null>(null)
+  // Admin state — kick/ban for online players (stdin-backed). Shared hook
+  // also drives the same flow on the Players tab.
+  const {
+    adminReady,
+    adminTooltip,
+    action: adminAction,
+    reason: adminReason,
+    setReason: setAdminReason,
+    busy: adminBusy,
+    toast: adminToast,
+    open: openAdminAction,
+    close: closeAdminAction,
+    confirm: handleAdminConfirm,
+  } = useAdminActions({ serverOnline: status === 'online' })
 
   useEffect(() => {
     checkInstall()
@@ -84,7 +93,6 @@ export default function Dashboard() {
     if (status !== 'online') {
       setConsoleAvailable(false)
       setLivePlayers([])
-      setRcon({ connected: false, hasPassword: false, serverOnline: false })
       return
     }
     let cancelled = false
@@ -98,10 +106,6 @@ export default function Dashboard() {
           if (cancelled) return
           if (p?.success) setLivePlayers(p.players || [])
         }
-        const r = await window.electronAPI.adminRconStatus()
-        if (!cancelled && r?.success) {
-          setRcon({ connected: r.connected, hasPassword: r.hasPassword, serverOnline: r.serverOnline })
-        }
       } catch { /* ignore */ }
     }
     tick()
@@ -109,35 +113,7 @@ export default function Dashboard() {
     return () => { cancelled = true; clearInterval(i) }
   }, [status])
 
-  // Auto-dismiss admin toast
-  useEffect(() => {
-    if (!adminToast) return
-    const t = setTimeout(() => setAdminToast(null), 3000)
-    return () => clearTimeout(t)
-  }, [adminToast])
-
-  const adminAvailable = rcon.serverOnline
-  const adminTooltip = !rcon.serverOnline ? 'Server is not online' : ''
-
-  async function handleAdminConfirm() {
-    if (!adminAction) return
-    setAdminBusy(true)
-    try {
-      const reason = adminReason.trim() || undefined
-      const fn = adminAction.kind === 'kick' ? window.electronAPI.adminKick : window.electronAPI.adminBan
-      const verb = adminAction.kind === 'kick' ? 'Kicked' : 'Banned'
-      const r = await fn(adminAction.name, reason)
-      if (r?.success) {
-        setAdminToast({ kind: 'success', text: `${verb} ${adminAction.name}` })
-        setAdminAction(null)
-        setAdminReason('')
-      } else {
-        setAdminToast({ kind: 'error', text: r?.error || `Failed to ${adminAction.kind} ${adminAction.name}` })
-      }
-    } finally {
-      setAdminBusy(false)
-    }
-  }
+  const adminAvailable = adminReady
 
   // Refresh server name when status flips so newly-saved settings get picked up.
   useEffect(() => { refreshHeaderInfo() }, [status])
@@ -298,7 +274,7 @@ export default function Dashboard() {
                   <div key={p.name} className="inline-flex items-center gap-0.5 bg-blue-500/15 text-blue-300 rounded font-mono">
                     <span className="text-xs px-2 py-0.5">{p.name}</span>
                     <button
-                      onClick={() => { setAdminAction({ name: p.name, kind: 'kick' }); setAdminReason('') }}
+                      onClick={() => openAdminAction(p.name, 'kick')}
                       disabled={!adminAvailable}
                       title={adminAvailable ? `Kick ${p.name}` : adminTooltip}
                       className={`px-1 py-0.5 rounded-r ${open && adminAction?.kind === 'kick' ? 'bg-amber-500/40 text-amber-200' : 'hover:bg-amber-500/20 hover:text-amber-300'} disabled:opacity-30 disabled:hover:bg-transparent`}
@@ -306,7 +282,7 @@ export default function Dashboard() {
                       <UserX size={11} />
                     </button>
                     <button
-                      onClick={() => { setAdminAction({ name: p.name, kind: 'ban' }); setAdminReason('') }}
+                      onClick={() => openAdminAction(p.name, 'ban')}
                       disabled={!adminAvailable}
                       title={adminAvailable ? `Ban ${p.name}` : adminTooltip}
                       className={`px-1 py-0.5 rounded-r ${open && adminAction?.kind === 'ban' ? 'bg-red-500/40 text-red-200' : 'hover:bg-red-500/20 hover:text-red-300'} disabled:opacity-30 disabled:hover:bg-transparent`}
@@ -348,7 +324,7 @@ export default function Dashboard() {
                   {adminBusy ? '…' : `Confirm ${adminAction.kind}`}
                 </button>
                 <button
-                  onClick={() => { setAdminAction(null); setAdminReason('') }}
+                  onClick={closeAdminAction}
                   className="btn-secondary text-xs"
                 >
                   Cancel

@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { Users, Clock, RefreshCw, Trash2, ChevronDown, ChevronRight, Search, AlertCircle, UserX, Ban, ShieldAlert } from 'lucide-react'
 import type { PlayerRecord } from '../types'
+import { useAdminActions } from '../hooks/useAdminActions'
 
 function formatDuration(ms: number) {
   if (!ms || ms < 0) return '0m'
@@ -36,12 +37,22 @@ export default function Players() {
   const [showDiagnostics, setShowDiagnostics] = useState(false)
   const [liveNames, setLiveNames] = useState<string[]>([])
   const [consoleAvailable, setConsoleAvailable] = useState(false)
-  const [rcon, setRcon] = useState<{ connected: boolean; hasPassword: boolean; serverOnline: boolean }>({ connected: false, hasPassword: false, serverOnline: false })
-  // Per-player open action: which row has kick/ban inline form expanded
-  const [adminAction, setAdminAction] = useState<{ name: string; kind: 'kick' | 'ban' } | null>(null)
-  const [adminReason, setAdminReason] = useState('')
-  const [adminBusy, setAdminBusy] = useState(false)
-  const [adminToast, setAdminToast] = useState<{ kind: 'success' | 'error'; text: string } | null>(null)
+
+  const {
+    adminReady,
+    adminTooltip,
+    action: adminAction,
+    reason: adminReason,
+    setReason: setAdminReason,
+    busy: adminBusy,
+    toast: adminToast,
+    open: openAction,
+    close: closeAction,
+    confirm: handleAdminConfirm,
+  } = useAdminActions({
+    serverOnline: serverStatus === 'online',
+    onAfterSuccess: () => refresh(),
+  })
 
   useEffect(() => {
     let alive = true
@@ -59,12 +70,11 @@ export default function Players() {
     return () => { alive = false; unsubStatus(); unsubLog(); clearInterval(i) }
   }, [])
 
-  // RCON live poll — actual online players when server is up.
+  // Live console poll — authoritative online-player list while the server is up.
   useEffect(() => {
     if (serverStatus !== 'online') {
       setLiveNames([])
       setConsoleAvailable(false)
-      setRcon({ connected: false, hasPassword: false, serverOnline: false })
       return
     }
     let cancelled = false
@@ -78,10 +88,6 @@ export default function Players() {
           if (cancelled) return
           if (p?.success) setLiveNames(p.players.map((x) => x.name))
         }
-        const r = await window.electronAPI.adminRconStatus()
-        if (!cancelled && r?.success) {
-          setRcon({ connected: r.connected, hasPassword: r.hasPassword, serverOnline: r.serverOnline })
-        }
       } catch { /* ignore */ }
     }
     tick()
@@ -89,41 +95,7 @@ export default function Players() {
     return () => { cancelled = true; clearInterval(int) }
   }, [serverStatus])
 
-  // Auto-dismiss admin toast after 3s
-  useEffect(() => {
-    if (!adminToast) return
-    const t = setTimeout(() => setAdminToast(null), 3000)
-    return () => clearTimeout(t)
-  }, [adminToast])
-
-  const adminAvailable = rcon.serverOnline
-  const adminTooltip = !rcon.serverOnline ? 'Server is not online' : ''
-
-  async function handleAdminConfirm() {
-    if (!adminAction) return
-    setAdminBusy(true)
-    try {
-      const reason = adminReason.trim() || undefined
-      const fn = adminAction.kind === 'kick' ? window.electronAPI.adminKick : window.electronAPI.adminBan
-      const verb = adminAction.kind === 'kick' ? 'Kicked' : 'Banned'
-      const r = await fn(adminAction.name, reason)
-      if (r?.success) {
-        setAdminToast({ kind: 'success', text: `${verb} ${adminAction.name}` })
-        setAdminAction(null)
-        setAdminReason('')
-        refresh()
-      } else {
-        setAdminToast({ kind: 'error', text: r?.error || `Failed to ${adminAction.kind} ${adminAction.name}` })
-      }
-    } finally {
-      setAdminBusy(false)
-    }
-  }
-
-  function openAction(name: string, kind: 'kick' | 'ban') {
-    setAdminAction({ name, kind })
-    setAdminReason('')
-  }
+  const adminAvailable = adminReady
 
   async function refresh() {
     try {
@@ -395,7 +367,7 @@ export default function Players() {
                         {adminBusy ? '…' : `Confirm ${actionOpen.kind}`}
                       </button>
                       <button
-                        onClick={() => { setAdminAction(null); setAdminReason('') }}
+                        onClick={closeAction}
                         className="btn-secondary text-xs"
                       >
                         Cancel

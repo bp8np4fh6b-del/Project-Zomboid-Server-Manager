@@ -136,7 +136,6 @@ declare global {
       getMods: () => Promise<{ success: boolean; mods: ModItem[]; needsRedetect?: boolean; error?: string }>
       addMod: (mod: { workshopId: string }) => Promise<{ success: boolean; error?: string; entry?: { workshopId: string; title: string; modIds: string[]; mapNames: string[] } }>
       removeMod: (id: string) => Promise<any>
-      toggleMod: (id: string) => Promise<any>
       redetectMod: (id: string) => Promise<{ success: boolean; error?: string; entry?: { workshopId: string; title: string; modIds: string[]; mapNames: string[] } }>
       redetectAllMissing: () => Promise<{ success: boolean; redetected?: number; total?: number; errors?: string[]; error?: string }>
       onModsProgress: (cb: (data: ModsProgressEvent) => void) => () => void
@@ -165,7 +164,7 @@ declare global {
       consolePlayers: () => Promise<{ success: boolean; players: Array<{ name: string }>; updatedAt?: number; error?: string }>
       consoleBroadcast: (message: string) => Promise<{ success: boolean; error?: string }>
       consoleSend: (cmd: string) => Promise<{ success: boolean; error?: string }>
-      adminRconStatus: () => Promise<{ success: boolean; connected: boolean; port: number; hasPassword: boolean; serverOnline: boolean; error?: string | null }>
+      adminStatus: () => Promise<{ success: boolean; serverOnline: boolean; error?: string | null }>
       adminKick: (name: string, reason?: string) => Promise<{ success: boolean; response?: string; error?: string }>
       adminBan: (name: string, reason?: string) => Promise<{ success: boolean; response?: string; error?: string }>
       adminCommand: (cmd: string) => Promise<{ success: boolean; response?: string; error?: string }>
@@ -175,9 +174,6 @@ declare global {
       saveSchedules: (schedules: Array<{ id?: string; time: string; enabled?: boolean; warningMinutes?: number[] }>) => Promise<{ success: boolean; schedules: Array<{ id: string; time: string; enabled: boolean; warningMinutes?: number[]; nextFireAt: number | null }> }>
       deleteSchedule: (id: string) => Promise<{ success: boolean; error?: string }>
       getLocalIp: () => Promise<{ success: boolean; ip: string | null; iface: string | null }>
-      scheduleRestart: (delayMinutes: number, warnings?: number[]) => Promise<{ success: boolean; scheduledFor?: number; warnings?: number[]; error?: string }>
-      cancelRestart: () => Promise<{ success: boolean; error?: string }>
-      getScheduledRestart: () => Promise<{ success: boolean; scheduled: { scheduledFor: number; msRemaining: number; warnings: number[] } | null }>
       getActivity: () => Promise<{ success: boolean; events: Array<{ at: string; kind: string; message: string }> }>
       checkForUpdate: () => Promise<{ success: boolean; info?: { version?: string; releaseDate?: string; releaseNotes?: string } | null; error?: string }>
       installUpdateNow: () => Promise<{ success: boolean }>
