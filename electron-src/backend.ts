@@ -46,32 +46,65 @@ interface PathsConfig {
   zomboidPath: string
 }
 
-function loadPathsConfig(): PathsConfig {
+// manager-config.json holds both the install paths and app preferences
+// (tray behaviour, Steam Web API key). Reads/writes merge so writers of
+// one group never clobber the other.
+function readConfigFile(): any {
   try {
     if (fs.existsSync(configPath)) {
-      const parsed = JSON.parse(fs.readFileSync(configPath, 'utf-8'))
-      return {
-        basePath: parsed.basePath || defaultPaths.basePath,
-        serverPath: parsed.serverPath || defaultPaths.serverPath,
-        zomboidPath: parsed.zomboidPath || defaultPaths.zomboidPath,
-      }
+      return JSON.parse(fs.readFileSync(configPath, 'utf-8'))
     }
-  } catch {
-    // fall through to defaults
+  } catch { /* corrupted file → treat as empty */ }
+  return {}
+}
+
+function writeConfigFile(patch: Record<string, any>) {
+  const merged = { ...readConfigFile(), ...patch }
+  if (!fs.existsSync(path.dirname(configPath))) {
+    fs.mkdirSync(path.dirname(configPath), { recursive: true })
   }
-  return { ...defaultPaths }
+  fs.writeFileSync(configPath, JSON.stringify(merged, null, 2), 'utf-8')
+  return merged
+}
+
+function loadPathsConfig(): PathsConfig {
+  const parsed = readConfigFile()
+  return {
+    basePath: parsed.basePath || defaultPaths.basePath,
+    serverPath: parsed.serverPath || defaultPaths.serverPath,
+    zomboidPath: parsed.zomboidPath || defaultPaths.zomboidPath,
+  }
 }
 
 function writePathsConfig(p: PathsConfig) {
-  try {
-    if (!fs.existsSync(path.dirname(configPath))) {
-      fs.mkdirSync(path.dirname(configPath), { recursive: true })
-    }
-    fs.writeFileSync(configPath, JSON.stringify(p, null, 2), 'utf-8')
-  } catch (err) {
-    // Best-effort. Caller surfaces the error if writing fails.
-    throw err
+  writeConfigFile(p)
+}
+
+// ── App preferences ───────────────────────────────────────────────
+// minimizeToTray: close/minimize hides to the system tray instead of quitting.
+// steamApiKey: Steam Web API key for Workshop search. Lives ONLY in this
+// local config file — never in the repo or the INI.
+
+interface AppPrefs {
+  minimizeToTray: boolean
+  steamApiKey: string
+}
+
+function getAppPrefs() {
+  const c = readConfigFile()
+  const prefs: AppPrefs = {
+    minimizeToTray: !!c.minimizeToTray,
+    steamApiKey: typeof c.steamApiKey === 'string' ? c.steamApiKey : '',
   }
+  return { success: true, prefs }
+}
+
+function setAppPrefs(partial: Partial<AppPrefs>) {
+  const patch: Record<string, any> = {}
+  if (typeof partial.minimizeToTray === 'boolean') patch.minimizeToTray = partial.minimizeToTray
+  if (typeof partial.steamApiKey === 'string') patch.steamApiKey = partial.steamApiKey.trim()
+  if (Object.keys(patch).length > 0) writeConfigFile(patch)
+  return getAppPrefs()
 }
 
 // Loaded once at module load. Path changes require an app relaunch (handled
@@ -2942,6 +2975,10 @@ module.exports = {
   setPaths,
   detectExistingServer,
   scanForExistingPzServer,
+
+  // App preferences (tray, Steam API key)
+  getAppPrefs,
+  setAppPrefs,
 
   // Install
   installSteamCmd,

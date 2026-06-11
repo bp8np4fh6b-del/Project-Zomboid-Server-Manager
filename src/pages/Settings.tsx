@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { Save, FileText, Timer, Plus, Trash2, AlertCircle } from 'lucide-react'
+import { Save, FileText, Timer, Plus, Trash2, AlertCircle, AppWindow, KeyRound, Eye, EyeOff } from 'lucide-react'
 import type { PzSettings } from '../types'
 
 interface ScheduleEntry {
@@ -38,7 +38,7 @@ function timeUntil(ms: number) {
 export default function Settings() {
   const [settings, setSettings] = useState<PzSettings>({})
   const [iniContent, setIniContent] = useState('')
-  const [tab, setTab] = useState<'form' | 'ini' | 'schedules'>('form')
+  const [tab, setTab] = useState<'form' | 'ini' | 'schedules' | 'app'>('form')
   const [saved, setSaved] = useState(false)
 
   // Schedules
@@ -47,6 +47,12 @@ export default function Settings() {
   const [newHour, setNewHour] = useState('02')
   const [newMinute, setNewMinute] = useState('30')
   const [now, setNow] = useState(Date.now())
+
+  // App preferences (tray, Steam API key)
+  const [minimizeToTray, setMinimizeToTray] = useState(false)
+  const [steamApiKey, setSteamApiKey] = useState('')
+  const [showApiKey, setShowApiKey] = useState(false)
+  const [prefsSaved, setPrefsSaved] = useState(false)
 
   useEffect(() => {
     load()
@@ -64,6 +70,26 @@ export default function Settings() {
     const ini = await window.electronAPI.getServerIni()
     if (ini.success) setIniContent(ini.content || '')
     refreshSchedules()
+    const p = await window.electronAPI.getAppPrefs()
+    if (p?.success) {
+      setMinimizeToTray(p.prefs.minimizeToTray)
+      setSteamApiKey(p.prefs.steamApiKey)
+    }
+  }
+
+  // Tray toggle applies immediately — the main process creates/destroys the
+  // tray icon on save, no restart needed.
+  const handleToggleTray = async (next: boolean) => {
+    setMinimizeToTray(next)
+    await window.electronAPI.setAppPrefs({ minimizeToTray: next })
+    setPrefsSaved(true)
+    setTimeout(() => setPrefsSaved(false), 2000)
+  }
+
+  const handleSaveApiKey = async () => {
+    await window.electronAPI.setAppPrefs({ steamApiKey })
+    setPrefsSaved(true)
+    setTimeout(() => setPrefsSaved(false), 2000)
   }
 
   async function refreshSchedules() {
@@ -155,6 +181,13 @@ export default function Settings() {
           >
             <Timer size={14} className="inline mr-1" />
             Schedules
+          </button>
+          <button
+            onClick={() => setTab('app')}
+            className={`px-3 py-1 rounded text-sm ${tab === 'app' ? 'bg-[#333] text-white' : 'text-[#a0a0a0]'}`}
+          >
+            <AppWindow size={14} className="inline mr-1" />
+            App
           </button>
         </div>
       </div>
@@ -310,6 +343,79 @@ export default function Settings() {
           </div>
           {/* Suppress unused-state warning when no schedules — `now` is used in the render above. */}
           <span className="hidden">{now}</span>
+        </div>
+      )}
+
+      {tab === 'app' && (
+        <div className="space-y-4">
+          {/* App behaviour */}
+          <div className="card">
+            <h3 className="font-semibold flex items-center gap-2 mb-1">
+              <AppWindow size={16} />
+              App Behaviour
+            </h3>
+            <p className="text-xs text-[#888] mb-4">
+              These settings control the manager itself, not the game server. They live on this machine only.
+            </p>
+
+            <label className="flex items-start gap-3 bg-[#222] rounded-md p-3 border border-[#333] cursor-pointer">
+              <input
+                type="checkbox"
+                checked={minimizeToTray}
+                onChange={(e) => handleToggleTray(e.target.checked)}
+                className="accent-green-500 mt-0.5"
+              />
+              <span>
+                <span className="text-sm block">Minimize to system tray</span>
+                <span className="text-xs text-[#888] block mt-0.5">
+                  Closing or minimizing the window hides the manager to the tray instead of quitting, so the server keeps
+                  running in the background. Reopen with a double-click on the tray icon. Quit from the tray menu —
+                  if the server is running you'll be asked whether to stop it or leave it up.
+                </span>
+              </span>
+            </label>
+          </div>
+
+          {/* Steam Web API key */}
+          <div className="card">
+            <h3 className="font-semibold flex items-center gap-2 mb-1">
+              <KeyRound size={16} />
+              Steam Web API Key
+            </h3>
+            <p className="text-xs text-[#888] mb-3">
+              Used for Workshop search in the Mods tab. Stored only in this machine's local config —
+              never uploaded anywhere except Steam's own API. Get a free key at{' '}
+              <button
+                onClick={() => window.electronAPI.openExternal('https://steamcommunity.com/dev/apikey')}
+                className="text-blue-400 hover:underline"
+              >
+                steamcommunity.com/dev/apikey
+              </button>.
+            </p>
+            <div className="flex gap-2">
+              <div className="relative flex-1">
+                <input
+                  type={showApiKey ? 'text' : 'password'}
+                  value={steamApiKey}
+                  onChange={(e) => setSteamApiKey(e.target.value)}
+                  placeholder="32-character hex key"
+                  className="input w-full font-mono text-sm pr-9"
+                />
+                <button
+                  onClick={() => setShowApiKey((v) => !v)}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 text-[#888] hover:text-white"
+                  title={showApiKey ? 'Hide key' : 'Show key'}
+                >
+                  {showApiKey ? <EyeOff size={14} /> : <Eye size={14} />}
+                </button>
+              </div>
+              <button onClick={handleSaveApiKey} className="btn-primary flex items-center gap-2 text-sm">
+                <Save size={14} /> Save key
+              </button>
+            </div>
+          </div>
+
+          {prefsSaved && <span className="text-green-500 text-sm">Saved!</span>}
         </div>
       )}
     </div>

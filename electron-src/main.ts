@@ -1,4 +1,4 @@
-const { app, BrowserWindow, Menu, ipcMain, shell, dialog } = require('electron')
+const { app, BrowserWindow, Menu, Tray, nativeImage, ipcMain, shell, dialog } = require('electron')
 const { join } = require('path')
 const { autoUpdater } = require('electron-updater')
 const backend = require('./backend')
@@ -10,6 +10,85 @@ const isDev = process.argv.includes('--dev')
 Menu.setApplicationMenu(null)
 
 let mainWindow: any = null
+let tray: any = null
+let isQuitting = false
+// When the user chooses "leave the server running" on quit, skip the
+// cleanup() kill pass so the PZ process survives the manager exiting.
+let leaveServerRunningOnQuit = false
+
+// 32x32 green-Z-on-dark tray icon, embedded so the tsc-only build needs no
+// asset copying. Regenerate with scripts/gen-tray-icon.js.
+const TRAY_ICON_B64 = 'iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAYAAABzenr0AAAAhUlEQVR42u3Xuw3AMAhFUeZgiOyWPbNT0rlJYvF5GCRjicrFPZ0N0c9h5hs5JDnoqAqzKv6JWB1/IfYGZMUHYnZ5XCdkGmAGeEeCoKxwGEAThwK0YSjAGncDPGE3ABE3AVBhEwAdFwMiwmJAZHwKiA73a7jHc1z+X9jf8jqrWYnlNGs9fwA9qovEDLewYAAAAABJRU5ErkJggg=='
+
+function trayEnabled(): boolean {
+  try { return !!backend.getAppPrefs()?.prefs?.minimizeToTray } catch { return false }
+}
+
+function showMainWindow() {
+  if (!mainWindow) { createWindow(); return }
+  if (mainWindow.isMinimized()) mainWindow.restore()
+  mainWindow.show()
+  mainWindow.focus()
+}
+
+async function quitFromTray() {
+  let status: any = null
+  try { status = await backend.getServerStatus() } catch {}
+  if (status?.status === 'online' || status?.status === 'starting') {
+    const choice = await dialog.showMessageBox({
+      type: 'question',
+      buttons: ['Stop server and quit', 'Leave server running and quit', 'Cancel'],
+      defaultId: 0,
+      cancelId: 2,
+      title: 'Quit PZ Server Manager',
+      message: 'The server is still running.',
+      detail: 'You can stop it now, or leave it running in the background. If you leave it running you\'ll need to stop it from Task Manager or by reopening the manager.',
+    })
+    if (choice.response === 2) return
+    if (choice.response === 1) leaveServerRunningOnQuit = true
+  }
+  isQuitting = true
+  app.quit()
+}
+
+function rebuildTrayMenu() {
+  if (!tray) return
+  backend.getServerStatus().then((s: any) => {
+    const online = s?.status === 'online' || s?.status === 'starting'
+    const menu = Menu.buildFromTemplate([
+      { label: 'Open Manager', click: showMainWindow },
+      { type: 'separator' },
+      online
+        ? { label: 'Stop Server', click: () => { backend.stopServer().then(rebuildTrayMenu) } }
+        : { label: 'Start Server', click: () => { backend.startServer({}).then(rebuildTrayMenu) } },
+      { type: 'separator' },
+      { label: 'Quit', click: quitFromTray },
+    ])
+    tray.setContextMenu(menu)
+    tray.setToolTip(`PZ Server Manager — ${s?.status === 'online' ? 'Online' : s?.status === 'starting' ? 'Starting…' : 'Offline'}`)
+  }).catch(() => {})
+}
+
+function createTray() {
+  if (tray) return
+  const icon = nativeImage.createFromDataURL(`data:image/png;base64,${TRAY_ICON_B64}`)
+  tray = new Tray(icon)
+  tray.on('double-click', showMainWindow)
+  rebuildTrayMenu()
+}
+
+function destroyTray() {
+  if (!tray) return
+  try { tray.destroy() } catch {}
+  tray = null
+}
+
+// Create/destroy the tray to match the current preference. Called at startup
+// and whenever the renderer saves App Behaviour settings.
+function syncTrayWithPrefs() {
+  if (trayEnabled()) createTray()
+  else destroyTray()
+}
 
 function createWindow() {
   mainWindow = new BrowserWindow({
@@ -36,6 +115,24 @@ function createWindow() {
   }
   mainWindow.on('closed', () => { mainWindow = null })
 
+  // Tray mode: close/minimize hides the window instead of quitting, so the
+  // server keeps running in the background. Real quit comes from the tray
+  // menu or when the preference is off.
+  mainWindow.on('close', (e: any) => {
+    if (!isQuitting && trayEnabled()) {
+      e.preventDefault()
+      mainWindow.hide()
+      rebuildTrayMenu()
+    }
+  })
+  mainWindow.on('minimize', (e: any) => {
+    if (trayEnabled()) {
+      e.preventDefault()
+      mainWindow.hide()
+      rebuildTrayMenu()
+    }
+  })
+
   // Mirror renderer console output to the main process console for easy debugging
   mainWindow.webContents.on('console-message', (_event: any, level: number, message: string) => {
     const labels = ['DEBUG', 'LOG', 'WARN', 'ERROR']
@@ -56,18 +153,22 @@ function createWindow() {
 
 app.whenReady().then(() => {
   createWindow()
+  syncTrayWithPrefs()
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()
   })
 })
 
 app.on('window-all-closed', () => {
-  try { backend.cleanup() } catch {}
+  // With tray mode on, the window hides instead of closing, so reaching this
+  // event means a real quit in either mode.
+  if (!leaveServerRunningOnQuit) { try { backend.cleanup() } catch {} }
   if (process.platform !== 'darwin') app.quit()
 })
 
 app.on('before-quit', () => {
-  try { backend.cleanup() } catch {}
+  isQuitting = true
+  if (!leaveServerRunningOnQuit) { try { backend.cleanup() } catch {} }
 })
 
 // Broadcast helpers
@@ -78,7 +179,10 @@ function broadcast(channel: string, data: any) {
 }
 
 // Wire up backend events to broadcast (uses backend's setter — see backend.ts)
-backend.onStatus = (status: string) => broadcast('server:statusUpdate', status)
+backend.onStatus = (status: string) => {
+  broadcast('server:statusUpdate', status)
+  rebuildTrayMenu()
+}
 backend.onLog = (data: any) => broadcast('server:log', data)
 backend.onModsProgress = (data: any) => broadcast('mods:progress', data)
 
@@ -219,6 +323,14 @@ ipcMain.handle('schedules:delete', async (_e: any, id: string) => backend.delete
 
 // Misc app helpers
 ipcMain.handle('app:getLocalIp', async () => backend.getLocalIp())
+
+// App preferences (tray behaviour, Steam API key)
+ipcMain.handle('prefs:get', async () => backend.getAppPrefs())
+ipcMain.handle('prefs:set', async (_e: any, partial: any) => {
+  const r = backend.setAppPrefs(partial)
+  syncTrayWithPrefs()
+  return r
+})
 
 // Activity feed
 ipcMain.handle('activity:get', async () => backend.getActivity())

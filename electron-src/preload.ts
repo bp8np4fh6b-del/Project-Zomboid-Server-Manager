@@ -111,6 +111,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // Misc helpers
   getLocalIp: () => ipcRenderer.invoke('app:getLocalIp'),
 
+  // App preferences (tray, Steam API key)
+  getAppPrefs: () => ipcRenderer.invoke('prefs:get'),
+  setAppPrefs: (partial: { minimizeToTray?: boolean; steamApiKey?: string }) => ipcRenderer.invoke('prefs:set', partial),
+
   // Activity feed
   getActivity: () => ipcRenderer.invoke('activity:get'),
 

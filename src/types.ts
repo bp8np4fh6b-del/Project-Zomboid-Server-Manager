@@ -174,6 +174,8 @@ declare global {
       saveSchedules: (schedules: Array<{ id?: string; time: string; enabled?: boolean; warningMinutes?: number[] }>) => Promise<{ success: boolean; schedules: Array<{ id: string; time: string; enabled: boolean; warningMinutes?: number[]; nextFireAt: number | null }> }>
       deleteSchedule: (id: string) => Promise<{ success: boolean; error?: string }>
       getLocalIp: () => Promise<{ success: boolean; ip: string | null; iface: string | null }>
+      getAppPrefs: () => Promise<{ success: boolean; prefs: { minimizeToTray: boolean; steamApiKey: string } }>
+      setAppPrefs: (partial: { minimizeToTray?: boolean; steamApiKey?: string }) => Promise<{ success: boolean; prefs: { minimizeToTray: boolean; steamApiKey: string } }>
       getActivity: () => Promise<{ success: boolean; events: Array<{ at: string; kind: string; message: string }> }>
       checkForUpdate: () => Promise<{ success: boolean; info?: { version?: string; releaseDate?: string; releaseNotes?: string } | null; error?: string }>
       installUpdateNow: () => Promise<{ success: boolean }>
