@@ -11,11 +11,11 @@ import {
   Trash2,
   Sparkles,
   Terminal,
-  ChevronDown,
-  ChevronRight,
+  Cog,
 } from 'lucide-react'
 import { useState, useEffect } from 'react'
 import ChangelogModal from './ChangelogModal'
+import AppSettingsModal from './AppSettingsModal'
 
 // Grouped like established server panels: day-to-day server operation up
 // top, content/config in the middle, rare system actions at the bottom.
@@ -46,37 +46,15 @@ const navGroups = [
   },
 ]
 
-const COLLAPSED_GROUPS_KEY = 'pz-manager.collapsedGroups'
-
-const statusColor: Record<string, string> = {
-  offline: 'bg-red-500',
-  starting: 'bg-amber-500',
-  online: 'bg-green-500',
-  stopping: 'bg-amber-500',
-}
-
 const LAST_SEEN_VERSION_KEY = 'pz-manager.lastSeenVersion'
 
 export default function Sidebar() {
   const location = useLocation()
-  const [status, setStatus] = useState('offline')
   const [version, setVersion] = useState('')
   const [changelogOpen, setChangelogOpen] = useState(false)
-  const [collapsed, setCollapsed] = useState<Record<string, boolean>>(() => {
-    try { return JSON.parse(localStorage.getItem(COLLAPSED_GROUPS_KEY) || '{}') } catch { return {} }
-  })
-
-  const toggleGroup = (label: string) => {
-    setCollapsed((prev) => {
-      const next = { ...prev, [label]: !prev[label] }
-      try { localStorage.setItem(COLLAPSED_GROUPS_KEY, JSON.stringify(next)) } catch { /* ignore */ }
-      return next
-    })
-  }
+  const [appSettingsOpen, setAppSettingsOpen] = useState(false)
 
   useEffect(() => {
-    const unsub = window.electronAPI.onServerStatus((s: string) => setStatus(s))
-    window.electronAPI.getServerStatus().then((s: any) => setStatus(s.status))
     window.electronAPI.getAppVersion().then((v: string) => {
       setVersion(v)
       // Auto-open the changelog once when the manager version changes
@@ -90,7 +68,6 @@ export default function Sidebar() {
         }
       } catch { /* localStorage unavailable, fail silently */ }
     }).catch(() => {})
-    return unsub
   }, [])
 
   return (
@@ -101,77 +78,67 @@ export default function Sidebar() {
       </div>
 
       <nav className="flex-1 px-3 py-3 space-y-3 overflow-y-auto">
-        {navGroups.map((group) => {
-          const isCollapsed = !!collapsed[group.label]
-          // Keep the group open when it contains the active page so the user
-          // never loses sight of where they are.
-          const containsActive = group.links.some((l) => l.path === location.pathname)
-          const open = !isCollapsed || containsActive
-          return (
-            <div key={group.label}>
-              <button
-                onClick={() => toggleGroup(group.label)}
-                className="w-full flex items-center justify-between px-3 py-1 text-[10px] font-semibold uppercase tracking-widest text-[#666] hover:text-[#999]"
-              >
-                {group.label}
-                {open ? <ChevronDown size={11} /> : <ChevronRight size={11} />}
-              </button>
-              {open && (
-                <div className="mt-1 space-y-0.5">
-                  {group.links.map((link) => {
-                    const isActive = location.pathname === link.path
-                    const Icon = link.icon
-                    return (
-                      <Link
-                        key={link.path}
-                        to={link.path}
-                        className={`flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium transition-all ${
-                          isActive
-                            ? 'bg-[#1f1f1f] text-white border-l-[3px] border-red-500'
-                            : 'text-[#a0a0a0] hover:text-white hover:bg-[#2a2a2a]'
-                        }`}
-                      >
-                        <Icon size={17} />
-                        {link.label}
-                      </Link>
-                    )
-                  })}
-                </div>
-              )}
+        {navGroups.map((group) => (
+          <div key={group.label}>
+            <p className="px-3 py-1 text-[10px] font-semibold uppercase tracking-widest text-[#666] select-none">
+              {group.label}
+            </p>
+            <div className="mt-1 space-y-0.5">
+              {group.links.map((link) => {
+                const isActive = location.pathname === link.path
+                const Icon = link.icon
+                return (
+                  <Link
+                    key={link.path}
+                    to={link.path}
+                    className={`flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium transition-all ${
+                      isActive
+                        ? 'bg-[#1f1f1f] text-white border-l-[3px] border-red-500'
+                        : 'text-[#a0a0a0] hover:text-white hover:bg-[#2a2a2a]'
+                    }`}
+                  >
+                    <Icon size={17} />
+                    {link.label}
+                  </Link>
+                )
+              })}
             </div>
-          )
-        })}
+          </div>
+        ))}
       </nav>
 
-      <div className="p-3 border-t border-[#333] space-y-2">
-        <div className="bg-[#222] rounded-lg p-3 border border-[#333]">
-          <div className="flex items-center gap-2 mb-1">
-            <span className={`w-2 h-2 rounded-full ${statusColor[status]} animate-pulse`} />
-            <span className="text-xs font-medium text-[#a0a0a0] uppercase tracking-wider">
-              {status}
-            </span>
-          </div>
-          <p className="text-xs text-[#666] truncate">Build 42 Server</p>
-        </div>
-
-        {/* Version button — opens the in-app patch notes modal */}
-        {version && (
+      {/* Footer: version (patch notes) + app-settings cog */}
+      <div className="p-3 border-t border-[#333]">
+        <div className="flex gap-1.5">
+          {version && (
+            <button
+              onClick={() => setChangelogOpen(true)}
+              className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-md bg-[#222] hover:bg-[#2a2a2a] border border-[#333] hover:border-[#444] text-[#a0a0a0] hover:text-white transition-colors"
+              title="View patch notes"
+            >
+              <Sparkles size={12} className="text-amber-400" />
+              <span className="text-xs font-mono">v{version}</span>
+              <span className="text-[10px] text-[#666]">— what's new</span>
+            </button>
+          )}
           <button
-            onClick={() => setChangelogOpen(true)}
-            className="w-full flex items-center justify-center gap-1.5 px-3 py-2 rounded-md bg-[#222] hover:bg-[#2a2a2a] border border-[#333] hover:border-[#444] text-[#a0a0a0] hover:text-white transition-colors"
-            title="View patch notes"
+            onClick={() => setAppSettingsOpen(true)}
+            className="px-2.5 py-2 rounded-md bg-[#222] hover:bg-[#2a2a2a] border border-[#333] hover:border-[#444] text-[#a0a0a0] hover:text-white transition-colors"
+            title="App settings (tray, Steam API key)"
           >
-            <Sparkles size={12} className="text-amber-400" />
-            <span className="text-xs font-mono">v{version}</span>
-            <span className="text-[10px] text-[#666]">— what's new</span>
+            <Cog size={14} />
           </button>
-        )}
+        </div>
       </div>
 
       <ChangelogModal
         open={changelogOpen}
         onClose={() => setChangelogOpen(false)}
         initialVersion={version}
+      />
+      <AppSettingsModal
+        open={appSettingsOpen}
+        onClose={() => setAppSettingsOpen(false)}
       />
     </aside>
   )

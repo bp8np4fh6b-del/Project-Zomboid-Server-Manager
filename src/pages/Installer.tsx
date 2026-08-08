@@ -2,8 +2,9 @@ import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
   Download, Check, Loader, FolderOpen, HardDrive, AlertCircle, RotateCw,
-  Sparkles, Wand2, ChevronRight, ChevronDown, Server, ArrowRight, RefreshCw,
+  Sparkles, Wand2, ChevronRight, ChevronDown, Server, ArrowRight, RefreshCw, Archive,
 } from 'lucide-react'
+import type { GameUpdateInfo } from '../types'
 
 // One-button setup wizard flow:
 //   idle → choose ('fresh' | 'existing') → installing-steam → installing-pz → done
@@ -51,6 +52,14 @@ export default function Installer() {
   const [applyingPaths, setApplyingPaths] = useState(false)
   const [pathsError, setPathsError] = useState<string | null>(null)
 
+  // Game server updates (Steam patches for app 380870)
+  const [updateInfo, setUpdateInfo] = useState<GameUpdateInfo | null>(null)
+  const [checkingUpdate, setCheckingUpdate] = useState(false)
+  const [updating, setUpdating] = useState(false)
+  const [serverStatus, setServerStatus] = useState('offline')
+  const [backingUp, setBackingUp] = useState(false)
+  const [backupMessage, setBackupMessage] = useState<string | null>(null)
+
   useEffect(() => {
     refresh()
     const unsub = window.electronAPI.onServerLog((data: any) => {
@@ -58,7 +67,9 @@ export default function Installer() {
         setLogs((prev) => [...prev.slice(-99), data.line])
       }
     })
-    return unsub
+    const unsubStatus = window.electronAPI.onServerStatus((s: string) => setServerStatus(s))
+    window.electronAPI.getServerStatus().then((s: any) => setServerStatus(s?.status || 'offline')).catch(() => {})
+    return () => { unsub(); unsubStatus() }
   }, [])
 
   // First-load: when nothing's installed, scan the Steam libraries to see if
@@ -203,12 +214,63 @@ export default function Installer() {
     // Relaunch on success.
   }
 
-  // ─────────────────────────────────────────────────────────────────────
-  // Renderers
-  // ─────────────────────────────────────────────────────────────────────
+  // ── Game server updates ─────────────────────────────────────────
 
   const installing = phase === 'installing-steam' || phase === 'installing-pz'
   const fullyInstalled = status.steamcmd && status.pzServer && phase === 'idle'
+
+  const runUpdateCheck = async (force: boolean) => {
+    setCheckingUpdate(true)
+    try {
+      const r = await window.electronAPI.checkGameUpdate(force)
+      setUpdateInfo(r)
+      if (!r?.success && r?.error && force) setError(r.error)
+    } finally {
+      setCheckingUpdate(false)
+    }
+  }
+
+  const runGameUpdate = async () => {
+    setUpdating(true)
+    setError(null)
+    setLogs([])
+    try {
+      const r = await window.electronAPI.updateGameServer()
+      if (!r.success) {
+        setError(r.error || 'Update failed.')
+      } else {
+        await runUpdateCheck(true)
+      }
+    } finally {
+      setUpdating(false)
+    }
+  }
+
+  const runBackupFirst = async () => {
+    setBackingUp(true)
+    setBackupMessage(null)
+    try {
+      const r = await window.electronAPI.createBackup()
+      setBackupMessage(r?.success ? 'Backup created — safe to update.' : (r?.error || 'Backup failed.'))
+    } finally {
+      setBackingUp(false)
+    }
+  }
+
+  // When auto-update is enabled in App Settings, check Steam (cached) as
+  // soon as the installed-summary view opens so a pending patch is visible
+  // without clicking anything.
+  useEffect(() => {
+    if (!fullyInstalled) return
+    window.electronAPI.getAppPrefs().then((p) => {
+      if (p?.success && p.prefs.autoUpdateGame) runUpdateCheck(false)
+    })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fullyInstalled])
+
+  // ─────────────────────────────────────────────────────────────────────
+  // Renderers
+  // ─────────────────────────────────────────────────────────────────────
 
   // Compact "installed" view — what the tab shows once the server is set up.
   if (fullyInstalled) {
@@ -246,6 +308,82 @@ export default function Installer() {
               <p className="font-mono text-sm break-all">{paths?.zomboidPath || '—'}</p>
             </div>
           </div>
+        </div>
+
+        {/* Server updates */}
+        <div className="card space-y-3">
+          <div className="flex items-center justify-between gap-2">
+            <h3 className="font-semibold flex items-center gap-2">
+              <Download size={16} className="text-blue-400" />
+              Server updates
+            </h3>
+            <button
+              onClick={() => runUpdateCheck(true)}
+              disabled={checkingUpdate || updating}
+              className="btn-secondary text-xs flex items-center gap-1.5 disabled:opacity-40"
+            >
+              {checkingUpdate ? <Loader size={12} className="animate-spin" /> : <RefreshCw size={12} />}
+              Check for updates
+            </button>
+          </div>
+
+          {updateInfo?.success ? (
+            <div className="space-y-3">
+              <div className="flex gap-6 text-xs text-[#888] font-mono">
+                <span>Installed build <span className="text-white">{updateInfo.installedBuildId}</span></span>
+                <span>Latest stable <span className="text-white">{updateInfo.latestBuildId}</span></span>
+              </div>
+
+              {updateInfo.updateAvailable ? (
+                <div className="bg-amber-500/10 border border-amber-500/30 rounded-md p-3 space-y-2">
+                  <p className="text-sm font-medium text-amber-300">
+                    A Zomboid patch is available ({updateInfo.installedBuildId} → {updateInfo.latestBuildId})
+                  </p>
+                  <p className="text-xs text-[#a0a0a0]">
+                    Major patches can break existing saves and outdated mods. Back up before updating.
+                    The server must be stopped while the update runs.
+                  </p>
+                  <div className="flex flex-wrap gap-2 pt-1">
+                    <button
+                      onClick={runGameUpdate}
+                      disabled={updating || serverStatus === 'online' || serverStatus === 'starting'}
+                      className="btn-primary text-xs flex items-center gap-1.5 disabled:opacity-40"
+                    >
+                      {updating ? <Loader size={12} className="animate-spin" /> : <Download size={12} />}
+                      {updating ? 'Updating…' : 'Update now'}
+                    </button>
+                    <button
+                      onClick={runBackupFirst}
+                      disabled={backingUp || updating}
+                      className="btn-secondary text-xs flex items-center gap-1.5 disabled:opacity-40"
+                    >
+                      {backingUp ? <Loader size={12} className="animate-spin" /> : <Archive size={12} />}
+                      Back up first
+                    </button>
+                  </div>
+                  {(serverStatus === 'online' || serverStatus === 'starting') && (
+                    <p className="text-xs text-amber-400/80">Stop the server to apply the update.</p>
+                  )}
+                  {backupMessage && <p className="text-xs text-green-400">{backupMessage}</p>}
+                </div>
+              ) : (
+                <p className="text-sm text-green-400 flex items-center gap-2">
+                  <Check size={14} /> Up to date — running the latest stable build.
+                </p>
+              )}
+            </div>
+          ) : (
+            <p className="text-xs text-[#888]">
+              Patches are delivered through SteamCMD. Check with Steam to see if a new build is available,
+              or enable automatic patch updates in App Settings (cog in the sidebar) to apply them on server start.
+            </p>
+          )}
+
+          {updating && logs.length > 0 && (
+            <div className="bg-[#111] border border-[#222] rounded-md p-2 font-mono text-[11px] text-[#888] max-h-32 overflow-y-auto">
+              {logs.slice(-8).map((l, i) => <div key={i} className="truncate">{l}</div>)}
+            </div>
+          )}
         </div>
 
         <div className="flex flex-wrap gap-2">

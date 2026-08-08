@@ -19,6 +19,16 @@ export interface InstallStatus {
   serverPath: string
 }
 
+export interface GameUpdateInfo {
+  success: boolean
+  installed?: boolean
+  installedBuildId?: string
+  latestBuildId?: string
+  updateAvailable?: boolean
+  checkedAt?: number
+  error?: string
+}
+
 export interface PzSettings {
   PublicName?: string
   PublicDescription?: string
@@ -146,6 +156,8 @@ declare global {
       installSteamCmd: () => Promise<any>
       installPzServer: () => Promise<any>
       getInstallStatus: () => Promise<InstallStatus>
+      checkGameUpdate: (force?: boolean) => Promise<GameUpdateInfo>
+      updateGameServer: () => Promise<{ success: boolean; path?: string; error?: string }>
       getSettings: () => Promise<PzSettings>
       saveSettings: (s: PzSettings) => Promise<any>
       getServerIni: () => Promise<{ success: boolean; content?: string; error?: string }>
@@ -163,9 +175,8 @@ declare global {
       createBackup: () => Promise<any>
       restoreBackup: (name: string) => Promise<any>
       deleteBackup: (name: string) => Promise<any>
-      workshopLookup: (input: string) => Promise<{ success: boolean; item?: WorkshopItemInfo; error?: string }>
       checkModUpdates: () => Promise<{ success: boolean; items: WorkshopItemInfo[]; error?: string; message?: string }>
-      workshopSearch: (opts: { query?: string; sort?: string; page?: number }) => Promise<{ success: boolean; items: WorkshopSearchItem[]; total: number; page?: number; needsKey?: boolean; error?: string }>
+      workshopSearch: (opts: { query?: string; sort?: string; page?: number }) => Promise<{ success: boolean; items: WorkshopSearchItem[]; total: number; page?: number; error?: string }>
       workshopGetCollection: (input: string) => Promise<{ success: boolean; collection?: { id: string; title: string }; items?: WorkshopSearchItem[]; error?: string }>
       getInstalledModsDetails: () => Promise<{ success: boolean; mods: InstalledModDetail[]; needsRedetect?: boolean; error?: string }>
       wipeServer: (scope: WipeScopeInput) => Promise<{ success: boolean; removed: string[]; failed: string[]; message?: string; error?: string }>
@@ -197,8 +208,8 @@ declare global {
       saveSchedules: (schedules: Array<{ id?: string; time: string; enabled?: boolean; warningMinutes?: number[] }>) => Promise<{ success: boolean; schedules: Array<{ id: string; time: string; enabled: boolean; warningMinutes?: number[]; nextFireAt: number | null }> }>
       deleteSchedule: (id: string) => Promise<{ success: boolean; error?: string }>
       getLocalIp: () => Promise<{ success: boolean; ip: string | null; iface: string | null }>
-      getAppPrefs: () => Promise<{ success: boolean; prefs: { minimizeToTray: boolean; steamApiKey: string } }>
-      setAppPrefs: (partial: { minimizeToTray?: boolean; steamApiKey?: string }) => Promise<{ success: boolean; prefs: { minimizeToTray: boolean; steamApiKey: string } }>
+      getAppPrefs: () => Promise<{ success: boolean; prefs: { minimizeToTray: boolean; autoUpdateGame: boolean; autoUpdateMods: boolean; hasSteamApiKey: boolean; steamApiKeyHint: string } }>
+      setAppPrefs: (partial: { minimizeToTray?: boolean; autoUpdateGame?: boolean; autoUpdateMods?: boolean; steamApiKey?: string }) => Promise<{ success: boolean; prefs: { minimizeToTray: boolean; autoUpdateGame: boolean; autoUpdateMods: boolean; hasSteamApiKey: boolean; steamApiKeyHint: string } }>
       getActivity: () => Promise<{ success: boolean; events: Array<{ at: string; kind: string; message: string }> }>
       checkForUpdate: () => Promise<{ success: boolean; info?: { version?: string; releaseDate?: string; releaseNotes?: string } | null; error?: string }>
       installUpdateNow: () => Promise<{ success: boolean }>

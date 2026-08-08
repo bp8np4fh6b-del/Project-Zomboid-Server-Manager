@@ -25,6 +25,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
   installPzServer: () => ipcRenderer.invoke('install:pzserver'),
   getInstallStatus: () => ipcRenderer.invoke('install:getStatus'),
 
+  // Game server updates
+  checkGameUpdate: (force?: boolean) => ipcRenderer.invoke('game:checkUpdate', force),
+  updateGameServer: () => ipcRenderer.invoke('game:update'),
+
   // Settings
   getSettings: () => ipcRenderer.invoke('settings:get'),
   saveSettings: (settings: any) => ipcRenderer.invoke('settings:save', settings),
@@ -55,7 +59,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
   deleteBackup: (name: string) => ipcRenderer.invoke('backup:delete', name),
 
   // Workshop
-  workshopLookup: (input: string) => ipcRenderer.invoke('workshop:lookup', input),
   checkModUpdates: () => ipcRenderer.invoke('workshop:checkUpdates'),
   workshopSearch: (opts: { query?: string; sort?: string; page?: number }) => ipcRenderer.invoke('workshop:search', opts),
   workshopGetCollection: (input: string) => ipcRenderer.invoke('workshop:collection', input),

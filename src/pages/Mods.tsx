@@ -1,9 +1,8 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import {
   Package, Plus, Trash2, Globe, Download, RefreshCw, ExternalLink, AlertCircle,
-  CheckCircle2, Wrench, X, ListPlus, Search, KeyRound, Layers, ThumbsUp, Users, ChevronLeft, ChevronRight,
+  CheckCircle2, Wrench, X, ListPlus, Search, Layers, ThumbsUp, Users, ChevronLeft, ChevronRight,
 } from 'lucide-react'
-import { useNavigate } from 'react-router-dom'
 import type { ModItem, WorkshopItemInfo, ModsProgressEvent, WorkshopSearchItem, InstalledModDetail } from '../types'
 
 function formatBytes(bytes?: number) {
@@ -71,7 +70,6 @@ const SORT_LABELS: Record<SortKey, string> = {
 }
 
 export default function Mods() {
-  const navigate = useNavigate()
   const [tab, setTab] = useState<Tab>('browse')
 
   const [mods, setMods] = useState<InstalledModDetail[]>([])
@@ -96,7 +94,6 @@ export default function Mods() {
   const [searchTotal, setSearchTotal] = useState(0)
   const [searching, setSearching] = useState(false)
   const [searchError, setSearchError] = useState<string | null>(null)
-  const [needsKey, setNeedsKey] = useState(false)
   const [searched, setSearched] = useState(false)
 
   // Collection resolver
@@ -141,7 +138,6 @@ export default function Mods() {
   const runSearch = useCallback(async (page = 1) => {
     setSearching(true)
     setSearchError(null)
-    setNeedsKey(false)
     const r = await window.electronAPI.workshopSearch({ query: searchText, sort: searchSort, page })
     setSearching(false)
     setSearched(true)
@@ -152,7 +148,6 @@ export default function Mods() {
     } else {
       setSearchResults([])
       setSearchTotal(0)
-      if (r?.needsKey) setNeedsKey(true)
       setSearchError(r?.error || 'Search failed.')
     }
   }, [searchText, searchSort])
@@ -293,6 +288,19 @@ export default function Mods() {
       setUpdateMessage(`Error: ${res.error || 'Could not check for updates.'}`)
     }
   }
+
+  // Auto-update pref (App Settings): check installed mods for updates as
+  // soon as the Mods page opens. Updated versions are pulled by the game
+  // server itself the next time it starts.
+  const autoCheckedRef = useRef(false)
+  useEffect(() => {
+    if (autoCheckedRef.current) return
+    autoCheckedRef.current = true
+    window.electronAPI.getAppPrefs().then((p) => {
+      if (p?.success && p.prefs.autoUpdateMods) handleCheckUpdates()
+    })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   // Re-download every mod with a pending update (SteamCMD pulls the newest
   // content; manifest + INI re-sync along the way).
@@ -520,31 +528,13 @@ export default function Mods() {
             </button>
           </div>
 
-          {needsKey && (
-            <div className="card border-amber-500/30 bg-amber-500/5">
-              <div className="flex items-start gap-3">
-                <KeyRound size={18} className="text-amber-400 mt-0.5 shrink-0" />
-                <div>
-                  <p className="text-sm font-medium text-amber-300">Workshop search needs a Steam Web API key</p>
-                  <p className="text-xs text-[#a0a0a0] mt-1">
-                    Add a free key in Settings → App to enable in-app search. Until then you can still install
-                    mods from the Paste / Collections tab.
-                  </p>
-                  <button onClick={() => navigate('/settings')} className="btn-secondary text-xs mt-2">
-                    Open Settings
-                  </button>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {searchError && !needsKey && (
+          {searchError && (
             <div className="bg-red-500/10 border border-red-500/30 rounded-md p-3 text-sm text-red-400 flex items-center gap-2">
               <AlertCircle size={14} /> {searchError}
             </div>
           )}
 
-          {!needsKey && !searchError && (
+          {!searchError && (
             <>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                 {searchResults.map((item) => (

@@ -263,6 +263,8 @@ ipcMain.handle('server:getLogs', async () => backend.getRecentLogs())
 // Installation
 ipcMain.handle('install:steamcmd', async () => backend.installSteamCmd())
 ipcMain.handle('install:pzserver', async () => backend.installPzServer())
+ipcMain.handle('game:checkUpdate', async (_e: any, force?: boolean) => backend.checkGameUpdate(!!force))
+ipcMain.handle('game:update', async () => backend.updateGameServer())
 ipcMain.handle('install:getStatus', async () => backend.getInstallStatus())
 
 // Settings
@@ -353,7 +355,6 @@ ipcMain.handle('backup:restore', async (_e: any, name: string) => backend.restor
 ipcMain.handle('backup:delete', async (_e: any, name: string) => backend.deleteBackup(name))
 
 // Workshop
-ipcMain.handle('workshop:lookup', async (_e: any, input: string) => backend.getWorkshopInfo(input))
 ipcMain.handle('workshop:checkUpdates', async () => backend.checkAllModUpdates())
 ipcMain.handle('workshop:search', async (_e: any, opts: any) => backend.workshopSearch(opts || {}))
 ipcMain.handle('workshop:collection', async (_e: any, input: string) => backend.workshopGetCollection(input))

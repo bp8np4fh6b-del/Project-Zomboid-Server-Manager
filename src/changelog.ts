@@ -20,6 +20,57 @@ const REPO_RELEASES = 'https://github.com/bp8np4fh6b-del/Project-Zomboid-Server-
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: '0.3.0',
+    date: '2026-08-08',
+    url: `${REPO_RELEASES}/tag/v0.3.0`,
+    sections: {
+      notes: [
+        'Project Zomboid Build 42 went stable with 42.20 on July 29, 2026. The manager now installs and updates the dedicated server from the public stable branch — the old `-beta unstable` flag is gone. Existing installs migrate to stable automatically on their next update.',
+        'Reminder: major patches (including the unstable → stable jump) can break existing saves and outdated mods. Use the "Back up first" button on the Installer tab before applying an update.',
+        'No Steam Web API key is bundled with this app — Workshop search works out of the box without one. If you want the optional official-API upgrade (vote counts), get your own free key at steamcommunity.com/dev/apikey: sign in, enter any domain name (localhost is fine), accept the terms, then paste the key into App Settings (cog in the sidebar). It is stored locally, write-only, and only ever sent to Steam.',
+      ],
+      added: [
+        'Zomboid patch updates: the Installer tab now shows your installed server build vs the latest stable build, with a "Check for updates" button and an "Update now" button that patches the server in place through SteamCMD (the server must be stopped first — the button tells you).',
+        'Auto-update preferences in App Settings (cog in the sidebar): enable "Zomboid patch updates" to check Steam and apply pending patches automatically before each server start, and "Workshop mod updates" to check your installed mods for updates every time the manager opens.',
+        '"Back up first" shortcut next to the update button — one click creates a safety backup before you patch.',
+      ],
+      qol: [
+        'Update checks are cached for six hours so the Installer tab and auto-update don\'t hammer Steam on every click or server start.',
+        'When auto-update is enabled, the Installer tab surfaces a pending patch automatically when you open it — no manual check needed.',
+      ],
+      fixed: [
+        'SteamCMD install/update script no longer passes the retired `unstable` beta branch, which would leave fresh installs on an outdated track.',
+      ],
+    },
+  },
+  {
+    version: '0.2.4',
+    date: '2026-08-08',
+    url: `${REPO_RELEASES}/tag/v0.2.4`,
+    sections: {
+      notes: [
+        'Workshop search now works out of the box with no Steam Web API key. The manager reads Steam\'s public workshop pages directly from your machine and enriches results through Steam\'s keyless item-details endpoint — no key is bundled with the app, and nothing is proxied through any server.',
+        'If you add your own Steam Web API key (App Settings, cog in the sidebar), search upgrades to Steam\'s official API with vote counts. The key is write-only: it is stored locally, never displayed again, and only ever sent to Steam itself.',
+      ],
+      added: [
+        'In-app Workshop browser on the Mods tab: search, sort (relevance / most subscribed / trending / newest), paginated results with thumbnails, subscriber counts, sizes, and last-updated times, plus one-click install straight into the server\'s WorkshopItems list.',
+        'Workshop collection support: paste a collection URL or ID to resolve its title and full mod list, review what\'s already installed, and queue the rest in one go.',
+        'Richer Installed view: mod cards now show workshop thumbnails, file sizes, subscriber counts, and update times, with update detection powered by a local metadata cache.',
+        'Tray mode (opt-in): closing or minimizing the window hides the manager to the system tray while the server keeps running in the background. Quit from the tray menu — if the server is running you\'ll be asked whether to stop it or leave it up.',
+        'New Console page with a live view of server output.',
+        'Dashboard performance graphs for the running server.',
+      ],
+      qol: [
+        'App-level preferences (tray mode, optional Steam API key) moved out of the Settings page into a dedicated App Settings modal, opened from the cog button in the sidebar footer.',
+        'Sidebar cleanup: nav groups are always expanded, and the server status card moved out of the sidebar now that the Dashboard has a status strip.',
+        'Steam API key handling hardened: the stored key is never sent back to the UI — the app only reports whether one exists plus its last three characters, so you can recognize which key is saved.',
+      ],
+      fixed: [
+        'Removed the defunct single-item workshop lookup path; item metadata is now fetched in batches through Steam\'s keyless details endpoint.',
+      ],
+    },
+  },
+  {
     version: '0.2.3',
     date: '2026-05-05',
     url: `${REPO_RELEASES}/tag/v0.2.3`,
