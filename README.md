@@ -1,5 +1,8 @@
 # Project Zomboid Server Manager
 
+> [!WARNING]
+> **This project is no longer maintained.** I don't have the time or interest to keep developing it, so there will be no further updates or bug fixes. The latest release should still work, but it may break as Project Zomboid changes. Feel free to fork it ([MIT licensed](LICENSE)).
+
 A desktop app for running and managing Project Zomboid Build 42 dedicated servers on Windows. Skip the .bat files and the manual mod-juggling — install the dedicated server, configure it, manage workshop mods, schedule restarts, broadcast chat, and watch player activity from one window.
 
 <img width="1384" height="889" alt="Dashboard" src="https://github.com/user-attachments/assets/d7c14a72-c1ff-4af8-acd7-b802b7e2f31c" />
@@ -46,7 +49,7 @@ That's it — the Dashboard's **Start** button takes it from there.
 
 ## Auto-updates
 
-Once installed, the manager checks GitHub for new versions on launch. When one is available it downloads in the background and prompts you to restart and install. You can also click **Check for Updates** in the top-right at any time. No need to revisit the Releases page once you've installed.
+Once installed, the manager checks GitHub for new versions on launch and can install them on restart. Since the project is no longer maintained, no new versions are planned, so the update check will normally find nothing.
 
 ## Building from source
 
@@ -96,12 +99,7 @@ Built with Electron + React + Vite + TypeScript + Tailwind. Auto-updates via `el
 
 ## Support
 
-If something's broken, hit me up:
-
-- **Discord:** `davidlee2904`
-- **Email:** Dwils178@gmail.com
-
-Bug reports are most useful with a screenshot or the relevant lines from the in-app log panel.
+This project is no longer maintained, so issues and bug reports may not get a reply.
 
 ## License
 
